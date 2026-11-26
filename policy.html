@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Millionaires Choice Parfum</title>
+<link rel="icon" href="https://millionaireschoiceparfum.com/wp-content/uploads/2022/03/cropped-favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@300;400;500;600;700&family=Philosopher:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="wrap policy">
+  <div class="crumbs"><a href="index.html">Home</a> / <span id="crumb"></span></div>
+  <h1 id="ttl"></h1>
+  <div id="sum"></div>
+  <div id="body"></div>
+  <div class="phelp">Questions? <a href="contact.html">Contact us</a> or chat on <a id="wa" target="_blank">WhatsApp</a>.</div>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/pages.js"></script>
+<script src="assets/app.js"></script>
+<script>
+const key = new URLSearchParams(location.search).get("p");
+const P = POLICIES[key] || POLICIES.terms;
+layout("");
+document.title = `${P.title} | Millionaires Choice Parfum`;
+ttl.textContent = crumb.textContent = P.title;
+if (P.summary) sum.innerHTML = `<div class="psum"><h3>In short</h3><ul>${P.summary.map((s) => `<li>${s}</li>`).join("")}</ul></div>`;
+body.innerHTML = P.html;
+wa.href = waLink("Hi, I have a question about " + P.title);
+</script>
+</body>
+</html>

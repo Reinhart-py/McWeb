@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Millionaires Choice Parfum</title>
+<link rel="icon" href="https://millionaireschoiceparfum.com/wp-content/uploads/2022/03/cropped-favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@300;400;500;600;700&family=Philosopher:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="crumbs" id="crumbs"></div>
+  <div class="pdp" id="pdp"></div>
+  <section class="sec rv" style="padding-top:10px">
+    <h2 class="sec-title">You May Also Like</h2>
+    <div class="row-wrap"><div class="row" id="rel"></div></div>
+  </section>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+const p = byId(new URLSearchParams(location.search).get("id")) || PRODUCTS[0];
+layout(p.type === "limited" ? "Limited Edition" : p.type === "kit" ? "Gift & Kits" : "Parfums");
+document.title = `${p.name} | Millionaires Choice Parfum`;
+crumbs.innerHTML = `<a href="index.html">Home</a> / <a href="shop.html?c=${p.type}">${p.type === "kit" ? "Gift & Kits" : p.type === "limited" ? "Limited Edition" : "Parfums"}</a> / ${p.name}`;
+let qty = 1;
+const noteBoxes = Object.entries(p.notes).map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join("");
+pdp.innerHTML = `
+  <div class="gal">
+    <div class="thumbs">${p.imgs.map((s, i) => `<img src="${s}" class="${i ? "" : "on"}" data-i="${i}" alt="" onerror="this.remove()">`).join("")}</div>
+    <div class="main-img" id="mainImg"><img src="${p.imgs[0]}" alt="${p.name}"></div>
+  </div>
+  <div class="pinfo">
+    <div class="fam">${p.family}</div>
+    <h1>${p.name}</h1>
+    <div class="price">${aed(p.price)} <s>${aed(p.was)}</s> <span class="off">Save ${off(p)}%</span></div>
+    <div class="tax">Prices in AED</div>
+    <p class="lead">${p.short}</p>
+    ${p.type === "parfum" ? `<div class="gift">${ICON.gift}<span><b style="font-weight:500">Free gift:</b> ${FREE_KIT_NOTE}</span></div>` : ""}
+    <div class="buy">
+      <div class="qty"><button onclick="q(-1)">−</button><span id="qv">1</span><button onclick="q(1)">+</button></div>
+      <button class="btn-dark" onclick="addToCart('${p.id}', qty)">Add to Cart</button>
+    </div>
+    <a class="btn-wa" target="_blank" href="${waLink(`Hi, I want to order ${p.name} (${aed(p.price)})`)}">${ICON.wa} Order on WhatsApp</a>
+    <div class="pyr">${noteBoxes}</div>
+    <div class="acc">
+      <details open><summary>Description</summary><div class="c">${p.short} ${p.type === "parfum" ? "Each bottle comes with a free Travel Kit, so you can carry your favourite scents anywhere." : ""}</div></details>
+      <details><summary>How to Use</summary><div class="c">Spray on your neck and wrists from about 15 cm away. Do not rub. For longer wear, spray on your clothes too.</div></details>
+      <details><summary>Shipping &amp; Returns</summary><div class="c">Free delivery to any address our courier serves (no PO Box). You can cancel before dispatch and get an e-voucher valid for 12 months. Delivered products cannot be returned, but if you receive the wrong product we will send the right one. <a href="policy.html?p=shipping" style="text-decoration:underline">Shipping &amp; Delivery</a> · <a href="policy.html?p=returns" style="text-decoration:underline">Return &amp; Refund Policy</a></div></details>
+    </div>
+    <div class="trust">
+      <div>${ICON.shield}Original product</div>
+      <div>${ICON.truck}Free delivery</div>
+      <div>${ICON.chat}WhatsApp support</div>
+    </div>
+  </div>`;
+function q(d) { qty = Math.max(1, qty + d); qv.textContent = qty; }
+const main = document.querySelector("#mainImg img");
+document.querySelectorAll(".thumbs img").forEach((t) => (t.onclick = () => {
+  document.querySelectorAll(".thumbs img").forEach((x) => x.classList.remove("on"));
+  t.classList.add("on"); main.style.opacity = 0;
+  setTimeout(() => { main.src = t.src; main.style.opacity = 1; }, 150);
+}));
+main.style.transition = "opacity .3s, transform .4s";
+const mi = document.getElementById("mainImg");
+mi.onmousemove = (e) => { const r = mi.getBoundingClientRect(); main.style.transformOrigin = `${((e.clientX - r.left) / r.width) * 100}% ${((e.clientY - r.top) / r.height) * 100}%`; main.style.transform = "scale(1.8)"; };
+mi.onmouseleave = () => (main.style.transform = "");
+rel.innerHTML = PRODUCTS.filter((x) => x.id !== p.id).map(card).join("");
+rowArrows(); reveal();
+</script>
+</body>
+</html>

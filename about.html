@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Our Story | Millionaires Choice Parfum</title>
+<meta name="description" content="Millionaires Choice Parfum was created by George Jatania with French Master Perfumers.">
+<link rel="icon" href="https://millionaireschoiceparfum.com/wp-content/uploads/2022/03/cropped-favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@300;400;500;600;700&family=Philosopher:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="cbanner" href="shop.html?c=signature"><img src="assets/hero/hero-signature.jpg" alt="Our Signature scents"></a>
+<div class="wrap">
+  <div class="two rv">
+    <img src="https://millionaireschoiceparfum.com/wp-content/uploads/2025/03/PARFUM-COLLECTION.webp" alt="MC Parfum Collection">
+    <div>
+      <h1 class="ctitle" style="margin:0 0 14px">Our Story</h1>
+      <p>Millionaires Choice Parfum is the creation of its Chairman and Founder, Mr George Jatania.</p>
+      <p>Mr Jatania has over 40 years of experience in the perfume and cosmetics industry. He founded Lornamead Ltd and, during his career, owned over 40 international brands, including the famous Yardley of London.</p>
+      <p>He created Millionaires Choice with French Master Perfumers. The collection is the result of years of passion and research, made to reflect a millionaire's lifestyle.</p>
+      <a class="btn-dark" href="shop.html?c=all">Shop the Collection</a>
+    </div>
+  </div>
+  <div class="feats rv">
+    <a href="shop.html?c=parfum"><svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v4l-4 3v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V10l-4-3V3"/><path d="M6 14h12"/></svg><p>Made with French<br>Master Perfumers</p></a>
+    <a href="policy.html?p=cruelty"><svg viewBox="0 0 24 24"><path d="M12 21s-7-5-7-11a7 7 0 0 1 14 0c0 6-7 11-7 11z"/><path d="M9 10.5 11 12.5 15 8.5"/></svg><p>Cruelty-Free, Not<br>Tested on Animals</p></a>
+    <a href="policy.html?p=cruelty"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5l2-2v6h-6l2-2a5 5 0 1 0 1 6"/></svg><p>Sustainable,<br>Recyclable Packaging</p></a>
+  </div>
+  <section class="sec rv"><h2 class="sec-title">The Collection</h2><div class="row-wrap"><div class="row" id="row"></div></div></section>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>layout("Our Story"); row.innerHTML = PRODUCTS.map(card).join(""); rowArrows(); reveal();</script>
+</body>
+</html>

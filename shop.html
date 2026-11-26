@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shop Perfumes | Millionaires Choice Parfum</title>
+<meta name="description" content="Shop Millionaires Choice parfums, Limited Edition and gift kits in the UAE.">
+<link rel="icon" href="https://millionaireschoiceparfum.com/wp-content/uploads/2022/03/cropped-favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@300;400;500;600;700&family=Philosopher:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="cbanner" id="cbanner" href="#"><img id="cbImg" src="" alt=""></a>
+<div class="wrap">
+  <h1 class="ctitle" id="ttl"></h1>
+  <div class="col">
+    <aside class="filters">
+      <div class="fhead"><span id="fIcon"></span>Filters</div>
+      <details open><summary>Category</summary>
+        <label><input type="checkbox" name="c" value="parfum"> Parfum</label>
+        <label><input type="checkbox" name="c" value="limited"> Limited Edition</label>
+        <label><input type="checkbox" name="c" value="kit"> Kits &amp; Gifts</label>
+      </details>
+      <details open><summary>Notes</summary>
+        <label><input type="checkbox" name="n" value="woody"> Woody</label>
+        <label><input type="checkbox" name="n" value="oud"> Oud</label>
+        <label><input type="checkbox" name="n" value="floral"> Floral</label>
+        <label><input type="checkbox" name="n" value="rose"> Rose</label>
+        <label><input type="checkbox" name="n" value="spicy"> Spicy</label>
+        <label><input type="checkbox" name="n" value="fresh"> Fresh</label>
+      </details>
+      <details><summary>Mood</summary>
+        <label><input type="checkbox" name="n" value="soft"> Soft</label>
+        <label><input type="checkbox" name="n" value="bold"> Bold</label>
+        <label><input type="checkbox" name="n" value="warm"> Warm</label>
+      </details>
+      <details><summary>Price</summary>
+        <label><input type="checkbox" name="p" value="0-500"> Under AED 500</label>
+        <label><input type="checkbox" name="p" value="500-1000"> AED 500 to 1,000</label>
+        <label><input type="checkbox" name="p" value="1000-9999"> Over AED 1,000</label>
+      </details>
+    </aside>
+    <div>
+      <div class="toolbar"><span id="count"></span>
+        <select id="sort" aria-label="Sort"><option value="f">Featured</option><option value="lh">Price, low to high</option><option value="hl">Price, high to low</option><option value="az">Alphabetically, A-Z</option></select>
+      </div>
+      <div class="grid" id="grid"></div>
+    </div>
+  </div>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+const qs = new URLSearchParams(location.search);
+const key = COLLECTIONS[qs.get("c")] ? qs.get("c") : "all";
+const C = COLLECTIONS[key], wishOnly = qs.get("wish"), n0 = qs.get("note");
+layout({ all: "Shop All", signature: "Signature", gifting: "Gifting", limited: "Limited Edition" }[key] || "Shop All");
+document.title = `${C.name} | Millionaires Choice Parfum`;
+cbImg.src = C.banner; cbImg.alt = C.name; cbanner.href = `shop.html?c=${key}`;
+ttl.textContent = wishOnly ? "MY WISHLIST" : C.title;
+fIcon.innerHTML = ICON.filter;
+if (n0) { const b = document.querySelector(`input[name=n][value="${n0}"]`); if (b) b.checked = true; }
+
+function render() {
+  const val = (n) => [...document.querySelectorAll(`input[name=${n}]:checked`)].map((i) => i.value);
+  const cs = val("c"), ns = val("n"), ps = val("p");
+  let list = PRODUCTS.filter((p) => C.match(p) &&
+    (!wishOnly || wish.includes(p.id)) &&
+    (!cs.length || cs.includes(p.type)) &&
+    (!ns.length || ns.some((n) => p.tags.includes(n))) &&
+    (!ps.length || ps.some((r) => { const [a, b] = r.split("-").map(Number); return p.price >= a && p.price < b; })));
+  const total = PRODUCTS.filter(C.match).length;
+  const s = sort.value;
+  if (s === "lh") list.sort((a, b) => a.price - b.price);
+  if (s === "hl") list.sort((a, b) => b.price - a.price);
+  if (s === "az") list.sort((a, b) => a.name.localeCompare(b.name));
+  count.textContent = `Showing - ${list.length} out of ${total} products`;
+  grid.innerHTML = list.length ? list.map(card).join("") : `<p style="grid-column:1/-1;color:#6b6b6b;padding:40px 0;text-align:center">Nothing here yet. <a href="shop.html?c=all" style="text-decoration:underline">See all perfumes</a></p>`;
+}
+document.querySelectorAll(".filters input").forEach((i) => (i.onchange = render));
+sort.onchange = render;
+render();
+</script>
+</body>
+</html>

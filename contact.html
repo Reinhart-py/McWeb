@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Contact Us | Millionaires Choice Parfum</title>
+<link rel="icon" href="https://millionaireschoiceparfum.com/wp-content/uploads/2022/03/cropped-favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@300;400;500;600;700&family=Philosopher:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="col-hero"><h1>Contact Us</h1><p>We usually reply fast on WhatsApp.</p></div>
+<div class="wrap">
+  <div class="two" style="align-items:start">
+    <div>
+      <div class="cbox"><h4>WhatsApp</h4><p>+971 50 590 2665</p><a class="btn-wa" style="margin-top:12px" target="_blank" id="wa"></a></div>
+      <div class="cbox"><h4>Phone</h4><p><a href="tel:+97145919749">+971 4 591 9749</a></p></div>
+      <div class="cbox"><h4>Email</h4><p><a href="mailto:enquiry@jataniageneraltrading.com">enquiry@jataniageneraltrading.com</a></p></div>
+      <div class="cbox"><h4>Office</h4><p>Jatania General Trading LLC<br>Office 903, Capricorn Tower, Sheikh Zayed Road, Dubai, UAE</p></div>
+    </div>
+    <div>
+      <h2 style="font-size:30px;margin-bottom:6px">Send Us a Message</h2>
+      <p style="font-size:13px;color:#6b6b6b;margin-bottom:14px">Your message opens in WhatsApp, ready to send to our team.</p>
+      <form class="form" id="cf">
+        <input name="n" required placeholder="Your name">
+        <select name="t"><option>I want to order</option><option>Help me pick a scent</option><option>Gifts for a company or event</option><option>Other</option></select>
+        <textarea name="m" rows="5" required placeholder="Your message"></textarea>
+        <button class="btn-dark" type="submit">Send on WhatsApp</button>
+      </form>
+    </div>
+  </div>
+  <iframe class="map" title="Map: Capricorn Tower, Sheikh Zayed Road, Dubai" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="https://maps.google.com/maps?q=Capricorn%20Tower%2C%20Sheikh%20Zayed%20Road%2C%20Dubai&z=15&output=embed"></iframe>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+layout("Contact Us"); wa.href = waLink("Hi, I have a question about MC parfums"); wa.innerHTML = ICON.wa + " Chat on WhatsApp";
+cf.onsubmit = (e) => { e.preventDefault(); window.open(waLink(`Hi, I'm ${cf.n.value}.\nTopic: ${cf.t.value}\n${cf.m.value}`), "_blank", "noopener"); };
+</script>
+</body>
+</html>
