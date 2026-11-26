@@ -15,6 +15,8 @@
 
 * [What's Inside](#whats-inside)
 * [Quick Start](#quick-start)
+* [Open It on Other Devices (Same Wi-Fi)](#open-it-on-other-devices-same-wi-fi)
+* [npm run dev / npm run host](#npm-run-dev--npm-run-host)
 * [Run It on Your Computer](#run-it-on-your-computer)
   * [Windows PowerShell](#windows-powershell)
   * [Mac / Linux Terminal](#mac--linux-terminal)
@@ -60,33 +62,114 @@
 
 ## Quick Start
 
+You need **Git** and **Node.js** (it comes with `npm` and `npx`).
+
 ```bash
 git clone https://github.com/Reinhart-py/McWeb.git
 cd McWeb
-python -m http.server 8765
+npx vite --host 0.0.0.0 --port 5173
 ```
 
-Then open **http://localhost:8765**. Stop the server with **Ctrl + C**.
+Vite prints two links:
+
+```
+➜  Local:   http://localhost:5173/
+➜  Network: http://192.168.1.20:5173/   ← open this on your phone, laptop or TV (same Wi-Fi)
+```
+
+Stop the server with **Ctrl + C**. The first run asks `Ok to proceed? (y)`. Type **y**.
+
+---
+
+## Open It on Other Devices (Same Wi-Fi)
+
+`--host 0.0.0.0` means "let every device on my Wi-Fi open this". Without it, only your own device can see the site.
+
+**1. Start a server** inside the `McWeb` folder. Pick any one:
+
+| Tool | Command | Port |
+|---|---|---|
+| **Vite** (best: live reload, prints the Wi-Fi link) | `npx vite --host 0.0.0.0 --port 5173` | 5173 |
+| **serve** | `npx serve . -l tcp://0.0.0.0:3000` | 3000 |
+| **http-server** | `npx http-server . -a 0.0.0.0 -p 8080 -c-1` | 8080 |
+| **live-server** (auto reload) | `npx live-server --host=0.0.0.0 --port=8080` | 8080 |
+| **Python** (no Node.js) | `python -m http.server 8765 --bind 0.0.0.0` | 8765 |
+
+**2. Find your IP address** (Vite already shows it as the **Network:** link):
+
+| Device | Command | Look for |
+|---|---|---|
+| Windows | `ipconfig` | **IPv4 Address**, like `192.168.1.20` |
+| Mac | `ipconfig getifaddr en0` | the number it prints |
+| Linux | `hostname -I` | the first number |
+| Termux | `ifconfig` | `inet` under `wlan0` |
+
+**3. On the other device** (same Wi-Fi), open `http://YOUR-IP:PORT`, for example `http://192.168.1.20:5173`.
+
+**Not opening on the other device?**
+* **Windows** may show a firewall popup the first time. Click **Allow access** with *Private networks* ticked.
+* Both devices must be on the **same Wi-Fi**. Guest Wi-Fi and some office Wi-Fi block devices from seeing each other.
+* Type `http://`, not `https://`.
+* Phone hotspot: start the server on the laptop that is connected to the phone's hotspot, then open the laptop's IP on the phone.
+
+---
+
+## npm run dev / npm run host
+
+The site doesn't need a `package.json`, so the repo has none yet. If you want short `npm run …` commands, create a file called **`package.json`** in the `McWeb` folder:
+
+```json
+{
+  "name": "mcweb",
+  "private": true,
+  "scripts": {
+    "dev": "vite --port 5173",
+    "host": "vite --host 0.0.0.0 --port 5173",
+    "serve": "serve . -l tcp://0.0.0.0:3000"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4",
+    "vite": "^5.4.11"
+  }
+}
+```
+
+And a file called **`.gitignore`** with one line, so the installed packages don't go to GitHub:
+
+```
+node_modules/
+```
+
+Then:
+
+```bash
+npm install        # one time only
+npm run dev        # only this device:   http://localhost:5173
+npm run host       # whole Wi-Fi:       http://YOUR-IP:5173
+npm run serve      # simple server:     http://YOUR-IP:3000
+```
+
+> **Why not Next.js?** McWeb is plain HTML, so Next.js would mean rewriting every page. Vite gives you the same `npm run dev` feel and Wi-Fi sharing without changing any code.
 
 ---
 
 ## Run It on Your Computer
 
-You only need **Git** (to download the code) and **Python** (for a tiny local server).
+You need **Git** (to download the code) and **Node.js** (for the server). Python works too if you don't have Node.js.
 
 ### Windows PowerShell
 
-1. Install Git and Python (one time only):
+1. Install Git and Node.js (one time only):
 
 ```powershell
 winget install Git.Git
 ```
 
 ```powershell
-winget install Python.Python.3.12
+winget install OpenJS.NodeJS.LTS
 ```
 
-Close and reopen PowerShell after installing.
+Close and reopen PowerShell after installing. Check that they work with `node -v` and `git --version`.
 
 2. Download the project and start it:
 
@@ -103,15 +186,21 @@ cd McWeb
 ```
 
 ```powershell
-python -m http.server 8765
+npx vite --host 0.0.0.0 --port 5173
 ```
 
-3. Open **http://localhost:8765**.
+3. Open **http://localhost:5173** on this PC, or the **Network:** link on any device on your Wi-Fi.
 
-**No Python? Use Node.js instead:**
+**No Node.js? Use Python instead:**
 
 ```powershell
-npx serve . -l 8765
+python -m http.server 8765 --bind 0.0.0.0
+```
+
+**PowerShell says "running scripts is disabled"** when you use `npx`? Run this once, then try again:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
 **Get the latest changes later:**
@@ -125,28 +214,43 @@ git pull
 ```bash
 git clone https://github.com/Reinhart-py/McWeb.git
 cd McWeb
-python3 -m http.server 8765
+npx vite --host 0.0.0.0 --port 5173
 ```
 
-Open **http://localhost:8765**.
+Open **http://localhost:5173**, or the **Network:** link on another device.
 
-(Mac: if `git` is missing, run `xcode-select --install`. Linux: `sudo apt install git python3`.)
+(Mac: install Node.js from [nodejs.org](https://nodejs.org) or `brew install node`, and if `git` is missing run `xcode-select --install`. Linux: `sudo apt install git nodejs npm`.)
 
 ### Android: Termux
+
+Turn your phone into the server. Everyone on the same Wi-Fi can then open the site.
 
 1. Install **Termux** from F-Droid. The Play Store version is old.
 2. In Termux:
 
 ```bash
-pkg update && pkg install git python
+pkg update && pkg upgrade -y
+pkg install git nodejs-lts -y
 git clone https://github.com/Reinhart-py/McWeb.git
 cd McWeb
-python -m http.server 8765
+npx vite --host 0.0.0.0 --port 5173
 ```
 
-3. Open **http://localhost:8765** in your phone's browser.
+3. Vite shows two links:
+   * **Local:** `http://localhost:5173` → open it in your phone's browser
+   * **Network:** `http://192.168.x.x:5173` → open it on any laptop or phone on the same Wi-Fi
 
-**Show it to someone on the same Wi-Fi:** run `ifconfig` in Termux and find your phone's IP (like `192.168.1.20`). They open `http://192.168.1.20:8765`.
+**Other Termux options:**
+
+```bash
+npx serve . -l tcp://0.0.0.0:3000          # simple and light
+npx http-server . -a 0.0.0.0 -p 8080 -c-1  # no caching, good while editing
+```
+
+**Termux tips:**
+* Can't see your IP? Run `ifconfig` and look for `inet` under `wlan0`. If `ifconfig` is missing, run `pkg install net-tools`.
+* Keep the server running when the screen turns off: pull down the notification and tap **Acquire wakelock**, or run `termux-wake-lock`.
+* Using `npm run host`? Add the `package.json` from [npm run dev / npm run host](#npm-run-dev--npm-run-host), run `npm install`, then `npm run host`.
 
 ### VS Code: Live Server
 
@@ -158,7 +262,7 @@ python -m http.server 8765
 
 1. On the [repo page](https://github.com/Reinhart-py/McWeb), click the green **Code** button → **Download ZIP**.
 2. Unzip it. The folder is called `McWeb-main`.
-3. Open a terminal in that folder and run `python -m http.server 8765`.
+3. Open a terminal in that folder and run `npx vite --host 0.0.0.0 --port 5173`, or `python -m http.server 8765 --bind 0.0.0.0`.
 
 ---
 
@@ -289,14 +393,20 @@ McWeb/
 
 ## FAQ / Problems
 
-**`git` or `python` is not recognized.**
-Install them (see [Windows PowerShell](#windows-powershell)), then close and reopen the terminal. On Windows, tick **"Add Python to PATH"** during setup.
+**`git`, `node`, `npx` or `python` is not recognized.**
+Install them (see [Windows PowerShell](#windows-powershell)), then close and reopen the terminal.
 
 **The page is blank or the styles are missing.**
 Start the server **inside** the `McWeb` folder, where `index.html` is.
 
-**Port 8765 is busy.**
-Use another number: `python -m http.server 9000`, then open `http://localhost:9000`.
+**The port is busy.**
+Use another number, for example `npx vite --host 0.0.0.0 --port 4000`, then open `http://localhost:4000`.
+
+**My phone can't open the Network link.**
+See [Open It on Other Devices](#open-it-on-other-devices-same-wi-fi). It's usually the Windows firewall, guest Wi-Fi, or a missing `--host 0.0.0.0`.
+
+**Termux: `npx vite` fails or is very slow.**
+Run `pkg upgrade` and `pkg install nodejs-lts`, then try again. Or use the lighter `npx serve . -l tcp://0.0.0.0:3000`.
 
 **Product photos don't show.**
 You're offline. Those photos come from MC's live website.
