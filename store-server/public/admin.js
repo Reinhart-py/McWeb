@@ -11,8 +11,12 @@ const ICONS = {
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.5"/>',
 };
 const icon = (k) => `<svg viewBox="0 0 24 24">${ICONS[k] || ""}</svg>`;
-let currency = "";
-const money = (n) => `${currency} ${Number(n || 0).toLocaleString("en-US")}`;
+let currency = "", locale = undefined, fmt = null;
+function setMoney(cur, loc) {
+  currency = cur; locale = loc || undefined;
+  try { fmt = new Intl.NumberFormat(locale, { style: "currency", currency: cur }); } catch { fmt = null; }
+}
+const money = (n) => fmt ? fmt.format(Number(n || 0)) : `${currency} ${Number(n || 0).toLocaleString(locale)}`;
 const day = (s) => (s || "").slice(0, 10);
 
 async function api(path, body) {
@@ -44,7 +48,7 @@ async function start() {
   api("brand").then((b) => { $("#loginBrand").innerHTML = b.logo ? brandHtml(b) : ""; }).catch(() => {});
   try {
     const me = await api("me");
-    features = me.features; currency = me.currency;
+    features = me.features; setMoney(me.currency, me.locale);
     $("#brand").innerHTML = brandHtml(me);
     document.title = me.store_name + " · Admin";
     document.querySelectorAll("#nav a[data-f]").forEach((a) => (a.hidden = !features[a.dataset.f]));
@@ -89,7 +93,7 @@ function imagePicker(holder, value) {
 }
 
 /* ---------- views ---------- */
-const VIEWS = { dashboard: viewDashboard, orders: viewOrders, products: viewProducts, customers: viewCustomers, coupons: viewCoupons, reports: viewReports, settings: viewSettings };
+const VIEWS = { dashboard: viewDashboard, orders: viewOrders, invoices: viewInvoices, products: viewProducts, customers: viewCustomers, coupons: viewCoupons, reports: viewReports, settings: viewSettings };
 function route() {
   let v = VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : "dashboard";
   if (features[v] === false) v = "dashboard";
@@ -148,7 +152,6 @@ function ordersBlock(title, rows, limit) {
 
 async function viewDashboard() {
   const [d, orders] = await Promise.all([api("dashboard"), api("orders")]);
-  currency = d.currency;
   let active = Math.max(0, d.stats.findIndex((s) => s.active));
   const max = Math.max(1, ...d.chart.orders, ...d.chart.paid);
   const view = $("#view");
@@ -290,10 +293,12 @@ async function viewReports() {
 }
 
 async function viewOrders() {
-  const [orders, d] = await Promise.all([api("orders"), api("dashboard")]);
-  currency = d.currency;
+  const orders = await api("orders");
   $("#view").innerHTML = "";
-  $("#view").append(ordersBlock("All Orders", orders));
+  const b = ordersBlock("All Orders", orders);
+  $(".tools", b).insertAdjacentHTML("afterbegin", '<button class="btn neworder">New order</button>');
+  $(".neworder", b).onclick = () => newOrder().catch((e) => toast(e.message));
+  $("#view").append(b);
 }
 
 /* ---------- side panel ---------- */
@@ -325,6 +330,7 @@ async function openOrder(name) {
       ${o.subtotal ? `<div class="sumrow"><span class="muted">Subtotal</span><span>${money(o.subtotal)}</span></div>` : ""}
       ${o.discount ? `<div class="sumrow"><span class="muted">Discount ${esc(o.coupon)}</span><span>− ${money(o.discount)}</span></div>` : ""}
       ${o.shipping ? `<div class="sumrow"><span class="muted">Shipping</span><span>${money(o.shipping)}</span></div>` : ""}
+      ${o.tax ? `<div class="sumrow"><span class="muted">Tax${o.subtotal + o.shipping - o.discount === o.total ? " (included)" : ""}</span><span>${money(o.tax)}</span></div>` : ""}
       <div class="sumrow"><b>Total</b><b>${money(o.total)}</b></div>
     </div>
     <div class="row2">
@@ -332,8 +338,10 @@ async function openOrder(name) {
       <label class="field"><span>Payment</span><select name="payment_status">${["Unpaid", "Paid", "Refunded"].map((s) => `<option ${s === o.payment_status ? "selected" : ""}>${s}</option>`).join("")}</select></label>
     </div>
     <label class="field"><span>Staff note</span><textarea name="admin_note" rows="2">${esc(o.admin_note)}</textarea></label>
-    <div class="row2"><button class="btn save">Save</button><button class="btn ghost prt">Print</button></div>`);
-  $(".prt", p).onclick = () => print();
+    <div class="row2"><button class="btn save">Save</button>${features.invoices ? `<button class="btn ghost inv">${o.invoice ? "View invoice" : "Create invoice"}</button>` : ""}</div>`);
+  if ($(".inv", p)) $(".inv", p).onclick = async () => {
+    try { const n = o.invoice || (await api("invoice", { order: o.name })).name; location.href = "invoice.html?name=" + encodeURIComponent(n); } catch (e) { toast(e.message); }
+  };
   $(".save", p).onclick = async () => {
     try {
       await api("order", { name: o.name, status: $("[name=status]", p).value, payment_status: $("[name=payment_status]", p).value, admin_note: $("[name=admin_note]", p).value });
@@ -407,41 +415,125 @@ function editProduct(p, cats) {
 }
 
 /* ---------- settings ---------- */
-const FEATURE_NAMES = { customers: "Customers", coupons: "Coupons", inventory: "Stock tracking", shipping: "Shipping fees", categories: "Categories", reports: "Reports" };
+/* ---------- invoices ---------- */
+async function viewInvoices() {
+  const list = await api("invoices");
+  $("#view").innerHTML = `<section class="card">
+    <div class="head"><h3>Invoices</h3><div class="tools"><input type="search" class="q" placeholder="Search invoice, order, customer"><button class="btn exp">Export</button></div></div>
+    <div class="twrap"><table><thead><tr><th>Invoice</th><th>Order</th><th>Customer</th><th>Date</th><th>Total</th><th>Paid</th></tr></thead><tbody></tbody></table></div></section>`;
+  let shown = list;
+  const draw = () => {
+    const q = $(".q").value.toLowerCase();
+    shown = list.filter((i) => !q || [i.name, i.order_name, i.customer_name].some((v) => String(v || "").toLowerCase().includes(q)));
+    $("#view tbody").innerHTML = shown.length ? shown.map((i) => `<tr data-k="${esc(i.name)}"><td><b>${esc(i.name)}</b></td><td>${esc(i.order_name)}</td>
+      <td>${esc(i.customer_name)}</td><td>${esc(day(i.created))}</td><td>${money(i.total)}</td><td><span class="chip">${esc(i.payment_status)}</span></td></tr>`).join("")
+      : '<tr><td colspan="6" class="empty">No invoices yet. Open an order and press "Create invoice".</td></tr>';
+  };
+  $(".q").oninput = draw;
+  $(".exp").onclick = () => csv("invoices.csv", ["Invoice", "Order", "Customer", "Date", "Total", "Paid"],
+    shown.map((i) => [i.name, i.order_name, i.customer_name, i.created, i.total, i.payment_status]));
+  $("#view tbody").onclick = (e) => { const tr = e.target.closest("tr[data-k]"); if (tr) location.href = "invoice.html?name=" + encodeURIComponent(tr.dataset.k); };
+  draw();
+}
+
+/* ---------- new order (phone / walk-in) ---------- */
+async function newOrder() {
+  const products = (await api("products")).filter((p) => p.active);
+  const opts = products.map((p) => `<option value="${esc(p.code)}">${esc(p.name)} · ${money(p.price)}</option>`).join("");
+  const row = () => `<div class="row2 line"><select class="pr">${opts}</select><input class="qt" type="number" min="1" max="20" value="1"></div>`;
+  const el = panel(`
+    <h3>New order</h3>
+    <div class="row2"><label class="field"><span>Name</span><input name="customer_name"></label><label class="field"><span>Phone</span><input name="phone"></label></div>
+    <label class="field"><span>Email</span><input name="email" type="email"></label>
+    <div class="row2"><label class="field"><span>Address</span><input name="address"></label><label class="field"><span>City</span><input name="city"></label></div>
+    <div class="field"><span>Products</span><div class="lines">${row()}</div><button type="button" class="btn ghost addl">Add another product</button></div>
+    <div class="row2">
+      <label class="field"><span>Payment</span><select name="payment_method">${["Cash on Delivery", "Cash", "Card", "Bank Transfer", "WhatsApp"].map((x) => `<option>${x}</option>`).join("")}</select></label>
+      ${features.coupons ? '<label class="field"><span>Coupon</span><input name="coupon"></label>' : ""}
+    </div>
+    <label class="field"><span>Notes</span><textarea name="notes" rows="2"></textarea></label>
+    <button class="btn save">Create order</button>`);
+  $(".addl", el).onclick = () => $(".lines", el).insertAdjacentHTML("beforeend", row());
+  $(".save", el).onclick = async () => {
+    const v = (n) => $(`[name=${n}]`, el)?.value || "";
+    const items = [...el.querySelectorAll(".line")].map((l) => ({ id: $(".pr", l).value, qty: $(".qt", l).value }));
+    try {
+      const r = await api("order/new", { customer_name: v("customer_name"), phone: v("phone"), email: v("email"), address: v("address"), city: v("city"),
+        payment_method: v("payment_method"), coupon: v("coupon"), notes: v("notes"), items });
+      toast(`Order ${r.order} created`); closePanel(); route();
+    } catch (e) { toast(e.message); }
+  };
+}
+
+/* ---------- sidebar collapse ---------- */
+function setupSidebar() {
+  document.querySelectorAll("#nav a, #logout").forEach((a) => {
+    if (a.querySelector(".label")) return;
+    const text = [...a.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim());
+    text.forEach((n) => { const s = document.createElement("span"); s.className = "label"; s.textContent = n.textContent.trim(); n.replaceWith(s); });
+  });
+  let collapsed = false;
+  try { collapsed = localStorage.getItem("sa_collapsed") === "1"; } catch {}
+  document.body.classList.toggle("collapsed", collapsed);
+  $("#collapseBtn").onclick = () => {
+    const c = document.body.classList.toggle("collapsed");
+    try { localStorage.setItem("sa_collapsed", c ? "1" : "0"); } catch {}
+  };
+}
+
+/* ---------- settings ---------- */
+const FEATURE_NAMES = { customers: "Customers", coupons: "Coupons", inventory: "Stock tracking", shipping: "Shipping fees", categories: "Categories",
+  reports: "Reports", invoices: "Invoices", tax: "Tax" };
 async function viewSettings() {
   const s = await api("settings");
   const f = (k, label, type = "text", extra = "") => `<label class="field"><span>${label}</span><input name="${k}" type="${type}" value="${esc(s[k])}" ${extra}></label>`;
   const c = (k, label) => `<label class="check"><input type="checkbox" name="${k}" ${s[k] === "1" ? "checked" : ""}>${label}</label>`;
   $("#view").innerHTML = `
-  <section class="card"><form class="form" id="setForm">
-    <h3>Store</h3>
-    <div class="field"><span>Logo (PNG recommended)</span><div class="logo"></div></div>
-    ${f("store_name", "Store name")}
-    <div class="row2">${f("currency", "Currency")}${f("whatsapp_number", "WhatsApp number")}</div>
-    ${f("site_url", "Website address", "url")}
-    ${f("allow_origin", "Allowed website (* = any)")}
-    <h3>Features</h3>
-    <div class="switches">${Object.entries(FEATURE_NAMES).map(([k, l]) => c("feature_" + k, l)).join("")}</div>
-    <h3>Shipping</h3>
-    <div class="row2">${f("shipping_fee", "Shipping fee", "number", 'min="0" step="0.01"')}${f("free_shipping_over", "Free shipping over (0 = never)", "number", 'min="0" step="0.01"')}</div>
-    ${f("low_stock", "Low stock alert at", "number", 'min="0"')}
-    <h3>Payments</h3>
-    <div class="switches">${c("enable_card", "Card (Stripe)")}${c("enable_cash_on_delivery", "Cash on delivery")}${c("enable_whatsapp", "WhatsApp order")}</div>
-    ${f("stripe_secret_key", "Stripe secret key", "password", 'autocomplete="off"')}
-    ${f("stripe_webhook_secret", "Stripe webhook secret", "password", 'autocomplete="off"')}
-    <p class="muted" style="margin:0">Webhook URL: <b>${esc(location.origin)}/api/method/store_admin.api.stripe_webhook</b> · event <b>checkout.session.completed</b></p>
-    <h3>Admin password</h3>
-    ${f("new_password", "New password", "password", 'autocomplete="new-password" placeholder="Leave empty to keep"')}
-    <div><button class="btn" type="submit">Save settings</button></div>
-  </form></section>`;
+  <form id="setForm" class="setgrid">
+    <section class="card"><h3>Store</h3>
+      <div class="field"><span>Logo (PNG recommended)</span><div class="logo"></div></div>
+      ${f("store_name", "Store name")}
+      <div class="row2">${f("currency", "Currency code (AED, USD, EUR…)", "text", 'maxlength="3" style="text-transform:uppercase"')}${f("locale", "Number format (en-US, en-AE, fr-FR…)")}</div>
+      ${f("site_url", "Website address", "url")}
+      ${f("allow_origin", "Allowed website (* = any)")}
+    </section>
+    <section class="card"><h3>Company details</h3>
+      ${f("company_address", "Address")}
+      <div class="row2">${f("company_phone", "Phone")}${f("company_email", "Email", "email")}</div>
+      ${f("whatsapp_number", "WhatsApp number")}
+      <h3>Invoices</h3>
+      <div class="row2">${f("invoice_prefix", "Invoice number prefix")}${f("tax_number", "Tax / VAT number")}</div>
+      ${f("invoice_note", "Note at the bottom of invoices")}
+    </section>
+    <section class="card"><h3>Features</h3>
+      <div class="switches">${Object.entries(FEATURE_NAMES).map(([k, l]) => c("feature_" + k, l)).join("")}</div>
+      <h3>Tax</h3>
+      <div class="row2">${f("tax_label", "Tax name (VAT, GST…)")}${f("tax_rate", "Tax rate %", "number", 'min="0" max="100" step="0.01"')}</div>
+      ${c("tax_included", "Prices already include tax")}
+      <h3>Shipping and stock</h3>
+      <div class="row2">${f("shipping_fee", "Shipping fee", "number", 'min="0" step="0.01"')}${f("free_shipping_over", "Free shipping over (0 = never)", "number", 'min="0" step="0.01"')}</div>
+      ${f("low_stock", "Low stock alert at", "number", 'min="0"')}
+    </section>
+    <section class="card"><h3>Payments</h3>
+      <div class="switches">${c("enable_card", "Card (Stripe)")}${c("enable_cash_on_delivery", "Cash on delivery")}${c("enable_whatsapp", "WhatsApp order")}</div>
+      ${f("stripe_secret_key", "Stripe secret key", "password", 'autocomplete="off"')}
+      ${f("stripe_webhook_secret", "Stripe webhook secret", "password", 'autocomplete="off"')}
+      <p class="muted" style="margin:0">Webhook URL: <b>${esc(location.origin)}/api/method/store_admin.api.stripe_webhook</b> · event <b>checkout.session.completed</b></p>
+      <h3>Admin password</h3>
+      ${f("new_password", "New password", "password", 'autocomplete="new-password" placeholder="Leave empty to keep"')}
+    </section>
+    <div class="setsave"><button class="btn" type="submit">Save settings</button></div>
+  </form>`;
   const logo = imagePicker($(".logo"), s.logo);
   $("#setForm").onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target), body = Object.fromEntries(fd);
-    for (const k of ["enable_card", "enable_cash_on_delivery", "enable_whatsapp", ...Object.keys(FEATURE_NAMES).map((x) => "feature_" + x)]) body[k] = fd.get(k) ? "1" : "0";
+    for (const k of ["enable_card", "enable_cash_on_delivery", "enable_whatsapp", "tax_included", ...Object.keys(FEATURE_NAMES).map((x) => "feature_" + x)]) body[k] = fd.get(k) ? "1" : "0";
+    body.currency = String(body.currency || "").toUpperCase();
     body.logo = logo.get();
     try { await api("settings", body); toast("Saved"); start(); } catch (err) { toast(err.message); }
   };
 }
 
+setupSidebar();
 start();

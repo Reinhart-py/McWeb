@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Invoice</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --black: #111; --mute: #777; --line: #e6e6e6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f2f2f2; color: #1f1f1f; font: 14px/1.5 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .bar { max-width: 820px; margin: 20px auto 0; padding: 0 16px; display: flex; gap: 10px; justify-content: flex-end; }
+  .btn { background: var(--black); color: #fff; border: 0; border-radius: 10px; padding: 10px 18px; font: inherit; font-weight: 500; cursor: pointer; text-decoration: none; }
+  .btn.ghost { background: #fff; color: var(--black); border: 1px solid var(--line); }
+  .page { max-width: 820px; margin: 16px auto 40px; background: #fff; padding: 48px; border-radius: 16px; }
+  .top { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
+  .logo img { max-height: 64px; max-width: 220px; object-fit: contain; }
+  .logo b { font-size: 20px; }
+  h1 { margin: 0; font-size: 28px; letter-spacing: .5px; color: var(--black); text-align: right; }
+  .meta { text-align: right; color: var(--mute); margin-top: 6px; }
+  .meta b { color: #1f1f1f; font-weight: 500; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 36px 0 28px; }
+  .cols h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--mute); margin: 0 0 8px; font-weight: 600; }
+  .cols p { margin: 0; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-weight: 500; color: var(--mute); border-bottom: 1px solid var(--line); padding: 10px 8px; font-size: 13px; }
+  td { padding: 12px 8px; border-bottom: 1px solid var(--line); }
+  .r { text-align: right; }
+  .totals { margin-left: auto; width: min(320px, 100%); margin-top: 16px; }
+  .totals div { display: flex; justify-content: space-between; padding: 6px 8px; }
+  .totals .grand { border-top: 2px solid var(--black); margin-top: 6px; padding-top: 12px; font-size: 17px; font-weight: 600; color: var(--black); }
+  .stamp { display: inline-block; border: 1.5px solid var(--black); border-radius: 8px; padding: 4px 12px; font-weight: 600; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; margin-top: 10px; }
+  .note { margin-top: 36px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--mute); }
+  .err { text-align: center; padding: 60px; color: var(--mute); }
+  @media (max-width: 640px) { .page { padding: 24px 18px; border-radius: 0; } .top { flex-direction: column; } h1, .meta { text-align: left; } .cols { grid-template-columns: 1fr; } }
+  @media print { body { background: #fff; } .bar { display: none; } .page { margin: 0; padding: 0; max-width: none; border-radius: 0; } @page { margin: 16mm; } }
+</style>
+</head>
+<body>
+<div class="bar"><a class="btn ghost" href="./#invoices">Back</a><button class="btn" onclick="print()">Print / Save PDF</button></div>
+<div class="page" id="inv"><div class="err">Loading…</div></div>
+<script>
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const name = new URLSearchParams(location.search).get("name");
+fetch("api/invoice?name=" + encodeURIComponent(name || "")).then(async (r) => {
+  const j = await r.json();
+  if (r.status === 401) { location.href = "./"; return; }
+  if (!r.ok) throw new Error(j.error);
+  const v = j.message, c = v.company, cu = v.customer;
+  let fmt;
+  try { fmt = new Intl.NumberFormat(v.locale || undefined, { style: "currency", currency: v.currency }); } catch { fmt = { format: (n) => `${v.currency} ${Number(n).toFixed(2)}` }; }
+  const m = (n) => fmt.format(Number(n || 0));
+  document.title = `${v.name} · ${c.name}`;
+  inv.innerHTML = `
+    <div class="top">
+      <div class="logo">${c.logo ? `<img src="${esc(c.logo)}" alt="${esc(c.name)}">` : `<b>${esc(c.name)}</b>`}
+        <p style="margin:10px 0 0;color:#555">${esc(c.address)}${c.phone ? "<br>" + esc(c.phone) : ""}${c.email ? "<br>" + esc(c.email) : ""}
+        ${c.tax_number ? `<br>${esc(v.tax_label)} No: ${esc(c.tax_number)}` : ""}</p></div>
+      <div><h1>${v.tax && c.tax_number ? "TAX INVOICE" : "INVOICE"}</h1>
+        <div class="meta">Invoice <b>${esc(v.name)}</b><br>Date <b>${esc(v.created.slice(0, 10))}</b><br>Order <b>${esc(v.order)}</b></div>
+        <div style="text-align:right"><span class="stamp">${v.status === "Cancelled" ? "Cancelled" : esc(v.payment_status || "Unpaid")}</span></div></div>
+    </div>
+    <div class="cols">
+      <div><h3>Bill to</h3><p><b>${esc(cu.name)}</b><br>${esc(cu.address)}, ${esc(cu.city)}<br>${esc(cu.phone)}${cu.email ? "<br>" + esc(cu.email) : ""}</p></div>
+      <div><h3>Payment</h3><p>${esc(v.payment_method)}</p></div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead>
+      <tbody>${v.items.map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.name)}</td><td class="r">${i.qty}</td><td class="r">${m(i.rate)}</td><td class="r">${m(i.amount)}</td></tr>`).join("")}</tbody>
+    </table>
+    <div class="totals">
+      <div><span>Subtotal</span><span>${m(v.subtotal)}</span></div>
+      ${v.discount ? `<div><span>Discount ${esc(v.coupon)}</span><span>− ${m(v.discount)}</span></div>` : ""}
+      ${v.shipping ? `<div><span>Shipping</span><span>${m(v.shipping)}</span></div>` : ""}
+      ${v.tax ? `<div><span>${esc(v.tax_label)} ${esc(v.tax_rate)}%${v.tax_included ? " (included)" : ""}</span><span>${m(v.tax)}</span></div>` : ""}
+      <div class="grand"><span>Total</span><span>${m(v.total)}</span></div>
+    </div>
+    ${v.note ? `<div class="note">${esc(v.note)}</div>` : ""}`;
+}).catch((e) => { inv.innerHTML = `<div class="err">${esc(e.message || "Could not load invoice")}</div>`; });
+</script>
+</body>
+</html>

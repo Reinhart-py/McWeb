@@ -26,8 +26,30 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #bdbdbd
 /* Layout */
 .app { display: flex; min-height: 100vh; }
 .side { width: 240px; background: #fff; border-right: 1px solid var(--line); padding: 24px 16px; display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; }
-.brand { font-size: 17px; font-weight: 700; color: var(--black); padding: 0 12px 24px; }
-.brand img, .brand-logo img { display: block; max-width: 100%; max-height: 56px; object-fit: contain; }
+.side-head { position: relative; padding: 0 0 24px; }
+.brand { font-size: 17px; font-weight: 700; color: var(--black); display: flex; justify-content: center; align-items: center; text-align: center; min-height: 40px; padding: 0 30px; }
+.brand img, .brand-logo img { display: block; max-width: 100%; max-height: 56px; object-fit: contain; margin: 0 auto; }
+.collapse { position: absolute; top: 50%; right: -4px; transform: translateY(calc(-50% - 12px)); background: none; border: 0; color: var(--mute); padding: 6px; border-radius: 8px; cursor: pointer; }
+.collapse:hover { background: var(--soft); color: var(--black); }
+.side { transition: width .2s; }
+/* Collapsed menu: icons only, label shows on hover */
+body.collapsed .side { width: 76px; padding: 24px 12px; overflow: visible; }
+body.collapsed .brand { font-size: 0; padding: 0; min-height: 0; height: 0; overflow: hidden; }
+body.collapsed .side-head { padding-bottom: 20px; display: flex; justify-content: center; }
+body.collapsed .collapse { position: static; transform: rotate(180deg); }
+body.collapsed .side nav a, body.collapsed .logout { justify-content: center; padding: 12px; position: relative; }
+body.collapsed .side .label { position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%); background: var(--black); color: #fff;
+  padding: 6px 12px; border-radius: 8px; font-size: 14px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .15s; z-index: 30; }
+body.collapsed .side nav a:hover .label, body.collapsed .logout:hover .label { opacity: 1; }
+.brand-logo { display: flex; justify-content: center; }
+.setgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.setgrid .card { display: grid; gap: 14px; }
+.setsave { grid-column: 1 / -1; position: sticky; bottom: 0; padding: 12px 0; background: linear-gradient(transparent, var(--bg) 40%); }
+.line { margin-bottom: 8px; grid-template-columns: 1fr 90px; }
+@media (max-width: 1000px) { .setgrid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .collapse { display: none; } body.collapsed .side { width: 240px; padding: 24px 16px; }
+  body.collapsed .brand { font-size: 17px; height: auto; min-height: 40px; } body.collapsed .side .label { position: static; opacity: 1; background: none; color: inherit; padding: 0; transform: none; }
+  body.collapsed .side nav a, body.collapsed .logout { justify-content: flex-start; } }
 .brand-logo:empty { display: none; }
 .imgpick { display: grid; gap: 10px; }
 .imgpick .prev { width: 100%; height: 160px; border: 1px dashed #d6d6d6; border-radius: 12px; display: grid; place-items: center; background: #fafafa; overflow: hidden; color: var(--mute); cursor: pointer; }

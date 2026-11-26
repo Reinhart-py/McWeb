@@ -49,6 +49,18 @@ Open http://localhost:8800/admin/
 
 Also: **Customers**, **Coupons** (percent or fixed, minimum order, use limit), **Reports** (sales by day, product and payment, CSV export), **stock tracking** with low-stock alerts, **shipping fee** with free-shipping limit, **categories**, a logo, and image upload or image URL for products. Turn each one on or off in **Settings → Features**. Uploaded images are saved in `data/uploads/`.
 
+**Invoices:** open an order and press **Create invoice**. You get a printable invoice (or tax invoice) with your logo, company details, tax and totals. Print it or save it as a PDF. Each invoice keeps a copy of the order, so later changes don't alter it. **Orders → New order** adds phone or walk-in orders. The menu can be collapsed to icons only.
+
+## Store config
+
+`store.config.json` holds the first-run defaults:
+
+- store name, currency, number format
+- company details, tax, invoice prefix
+- which product seed file to use
+
+Point to a different file with `STORE_CONFIG=path/to/file.json npm start`. Anything saved in the admin Settings page takes priority over the file.
+
 ## Connect a website
 
 The shop API uses the same paths as the Frappe app in `../store_admin`, so a website works with either backend.

@@ -44,31 +44,40 @@ addCol("orders", "discount", "REAL DEFAULT 0");
 addCol("orders", "shipping", "REAL DEFAULT 0");
 addCol("orders", "coupon", "TEXT DEFAULT ''");
 addCol("orders", "admin_note", "TEXT DEFAULT ''");
+addCol("orders", "tax", "REAL DEFAULT 0");
+db.exec(`CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, order_name TEXT UNIQUE,
+  created TEXT DEFAULT (datetime('now')), total REAL, data TEXT)`);
 
 const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 // Modules that can be switched on/off in Settings
-const FEATURES = ["customers", "coupons", "inventory", "shipping", "categories", "reports"];
+const FEATURES = ["customers", "coupons", "inventory", "shipping", "categories", "reports", "invoices", "tax"];
 
+// Store defaults come from store.config.json (or the file in STORE_CONFIG). Settings saved in the admin panel win.
+const CONFIG_FILE = process.env.STORE_CONFIG || path.join(ROOT, "store.config.json");
+const CONFIG = fs.existsSync(CONFIG_FILE) ? JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")) : {};
 const DEFAULTS = {
-  store_name: "My Store", currency: "AED", whatsapp_number: "", site_url: "", logo: "",
+  store_name: "My Store", currency: "USD", locale: "en-US", whatsapp_number: "", site_url: "", logo: "",
+  company_address: "", company_email: "", company_phone: "", tax_number: "",
+  tax_label: "Tax", tax_rate: "0", tax_included: "1", invoice_prefix: "INV-", invoice_note: "Thank you for your order.",
   allow_origin: "*", enable_cash_on_delivery: "1", enable_card: "0", enable_whatsapp: "1",
   shipping_fee: "0", free_shipping_over: "0", low_stock: "5",
   feature_customers: "1", feature_coupons: "1", feature_inventory: "1", feature_shipping: "1",
-  feature_categories: "1", feature_reports: "1",
+  feature_categories: "1", feature_reports: "1", feature_invoices: "1", feature_tax: "1",
+  ...(CONFIG.settings || {}),
   stripe_secret_key: process.env.STRIPE_SECRET_KEY || "",
   stripe_webhook_secret: process.env.STRIPE_WEBHOOK_SECRET || "",
 };
 const getSetting = (k) => db.prepare("SELECT value FROM settings WHERE key=?").get(k)?.value ?? DEFAULTS[k] ?? "";
 const setSetting = (k, v) => db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k, String(v ?? ""));
 
-// First run: load products from seed-products.json (edit that file for another store)
+// First run: load products from the seed file named in the config
 if (!db.prepare("SELECT COUNT(*) n FROM products").get().n) {
-  const seedFile = path.join(ROOT, "seed-products.json");
+  const seedFile = path.join(path.dirname(CONFIG_FILE), CONFIG.seed_products || "seed-products.json");
   if (fs.existsSync(seedFile)) {
     const seed = JSON.parse(fs.readFileSync(seedFile, "utf8"));
-    for (const [k, v] of Object.entries(seed.settings || {})) setSetting(k, v);
     const ins = db.prepare("INSERT INTO products(code,name,price,compare_price,stock,active,image) VALUES(?,?,?,?,?,1,?)");
     for (const p of seed.products || []) ins.run(p.code, p.name, p.price, p.compare_price || 0, p.stock ?? 100, p.image || "");
   }
@@ -164,14 +173,15 @@ function restock(order, sign) {
     db.prepare("UPDATE products SET stock=MAX(0, stock + ?) WHERE code=?").run(sign * i.qty, i.code);
 }
 
-async function createOrder(b) {
+async function createOrder(b, admin = false) {
   const customer_name = clean(b.customer_name, 120), phone = clean(b.phone, 30);
   const address = clean(b.address, 500), city = clean(b.city, 80);
   const payment_method = clean(b.payment_method, 30);
   if (!customer_name || !phone || !address || !city) throw new Error("Please fill name, phone, address and city.");
   const cfg = storeConfig().payment_options;
   const allowed = { "Card": cfg.card, "Cash on Delivery": cfg.cash_on_delivery, "WhatsApp": cfg.whatsapp };
-  if (!allowed[payment_method]) throw new Error("This payment option is not available.");
+  if (!admin && !allowed[payment_method]) throw new Error("This payment option is not available.");
+  if (admin && !["Cash on Delivery", "WhatsApp", "Bank Transfer", "Cash", "Card"].includes(payment_method)) throw new Error("Pick a payment method.");
 
   let items = b.items;
   if (typeof items === "string") items = JSON.parse(items);
@@ -188,14 +198,19 @@ async function createOrder(b) {
   const coupon = findCoupon(b.coupon, subtotal);
   const discount = coupon ? coupon.discount : 0;
   const shipping = shippingFor(subtotal);
-  const total = money(subtotal - discount + shipping);
+  // Tax: either already inside the prices, or added on top
+  const rate = on("feature_tax") ? Math.max(0, Number(getSetting("tax_rate")) || 0) / 100 : 0;
+  const taxable = subtotal - discount + shipping;
+  const included = getSetting("tax_included") === "1";
+  const tax = money(included ? taxable - taxable / (1 + rate) : taxable * rate);
+  const total = money(taxable + (included ? 0 : tax));
 
   db.exec("BEGIN");
   let name;
   try {
-    const r = db.prepare(`INSERT INTO orders(customer_name,phone,email,address,city,notes,payment_method,subtotal,discount,shipping,coupon,total)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(customer_name, phone, clean(b.email, 120), address, city, clean(b.notes, 1000), payment_method,
-      subtotal, discount, shipping, coupon ? coupon.code : "", total);
+    const r = db.prepare(`INSERT INTO orders(customer_name,phone,email,address,city,notes,payment_method,subtotal,discount,shipping,coupon,tax,total,source)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(customer_name, phone, clean(b.email, 120), address, city, clean(b.notes, 1000), payment_method,
+      subtotal, discount, shipping, coupon ? coupon.code : "", tax, total, admin ? "Admin" : "Website");
     name = "ORD-" + String(r.lastInsertRowid).padStart(5, "0");
     db.prepare("UPDATE orders SET name=? WHERE id=?").run(name, r.lastInsertRowid);
     const ins = db.prepare("INSERT INTO order_items(order_name,code,name,qty,rate,amount) VALUES(?,?,?,?,?,?)");
@@ -205,8 +220,8 @@ async function createOrder(b) {
     db.exec("COMMIT");
   } catch (e) { db.exec("ROLLBACK"); throw e; }
 
-  const out = { order: name, subtotal, discount, shipping, total, currency: getSetting("currency") };
-  if (payment_method === "Card") out.checkout_url = await stripeCheckout(name, lines, clean(b.email, 120), { discount, shipping, total });
+  const out = { order: name, subtotal, discount, shipping, tax, total, currency: getSetting("currency") };
+  if (payment_method === "Card" && !admin) out.checkout_url = await stripeCheckout(name, lines, clean(b.email, 120), { discount, shipping, total, tax: included ? 0 : tax });
   return out;
 }
 
@@ -222,7 +237,8 @@ async function stripeCheckout(order, lines, email, extra) {
   // Stripe has no negative lines, so a discounted order is sent as one line with the final total
   const items = extra.discount
     ? [{ qty: 1, rate: extra.total, name: `Order ${order}` }]
-    : [...lines, ...(extra.shipping ? [{ qty: 1, rate: extra.shipping, name: "Shipping" }] : [])];
+    : [...lines, ...(extra.shipping ? [{ qty: 1, rate: extra.shipping, name: "Shipping" }] : []),
+       ...(extra.tax ? [{ qty: 1, rate: extra.tax, name: getSetting("tax_label") }] : [])];
   items.forEach((l, i) => {
     f.set(`line_items[${i}][quantity]`, l.qty);
     f.set(`line_items[${i}][price_data][currency]`, getSetting("currency").toLowerCase());
@@ -333,7 +349,38 @@ function listOrders(q) {
   return db.prepare(`SELECT name,customer_name,phone,city,status,payment_method,payment_status,total,created FROM orders
     ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY id DESC LIMIT 500`).all(...args);
 }
-const SETTING_KEYS = ["store_name", "currency", "whatsapp_number", "site_url", "logo", "allow_origin", "enable_cash_on_delivery", "enable_card", "enable_whatsapp",
+function createInvoice(order) {
+  if (!on("feature_invoices")) throw new Error("Invoices are turned off in Settings.");
+  const o = db.prepare("SELECT * FROM orders WHERE name=?").get(order);
+  if (!o) throw new Error("Order not found");
+  if (o.status === "Cancelled") throw new Error("Cancelled orders cannot be invoiced.");
+  const old = db.prepare("SELECT name FROM invoices WHERE order_name=?").get(order);
+  if (old) return old.name;
+  // The invoice keeps a copy of everything, so later edits to settings or products do not change it
+  const g = (k) => getSetting(k);
+  const data = {
+    company: { name: g("store_name"), logo: g("logo"), address: g("company_address"), email: g("company_email"), phone: g("company_phone"), tax_number: g("tax_number") },
+    customer: { name: o.customer_name, phone: o.phone, email: o.email, address: o.address, city: o.city },
+    order: o.name, payment_method: o.payment_method, currency: g("currency"), locale: g("locale"),
+    items: db.prepare("SELECT code,name,qty,rate,amount FROM order_items WHERE order_name=?").all(order),
+    subtotal: o.subtotal || o.total, discount: o.discount, coupon: o.coupon, shipping: o.shipping,
+    tax: o.tax, tax_label: g("tax_label"), tax_rate: g("tax_rate"), tax_included: g("tax_included") === "1", total: o.total,
+    note: g("invoice_note"),
+  };
+  const r = db.prepare("INSERT INTO invoices(order_name,total,data) VALUES(?,?,?)").run(order, o.total, JSON.stringify(data));
+  const name = g("invoice_prefix") + String(r.lastInsertRowid).padStart(5, "0");
+  db.prepare("UPDATE invoices SET name=? WHERE id=?").run(name, r.lastInsertRowid);
+  return name;
+}
+function getInvoice(name) {
+  const i = db.prepare("SELECT * FROM invoices WHERE name=?").get(name);
+  if (!i) throw new Error("Invoice not found");
+  const o = db.prepare("SELECT payment_status,status FROM orders WHERE name=?").get(i.order_name) || {};
+  return { name: i.name, created: i.created, ...JSON.parse(i.data), payment_status: o.payment_status, status: o.status };
+}
+
+const SETTING_KEYS = ["store_name", "currency", "locale", "whatsapp_number", "site_url", "logo", "allow_origin", "enable_cash_on_delivery", "enable_card", "enable_whatsapp",
+  "company_address", "company_email", "company_phone", "tax_number", "tax_label", "tax_rate", "tax_included", "invoice_prefix", "invoice_note",
   "shipping_fee", "free_shipping_over", "low_stock", "stripe_secret_key", "stripe_webhook_secret", ...FEATURES.map((f) => "feature_" + f)];
 const SECRET_KEYS = ["stripe_secret_key", "stripe_webhook_secret"];
 
@@ -391,7 +438,7 @@ async function handle(req, res) {
     if (!isAdmin(req)) return fail(res, 401, "Please log in");
     try {
       const b = req.method === "POST" ? parseBody(await readBody(req, r === "upload" ? 8e6 : 1e6), req.headers["content-type"]) : {};
-      if (r === "me") return ok(res, { store_name: getSetting("store_name"), logo: getSetting("logo"), currency: getSetting("currency"), features: features() });
+      if (r === "me") return ok(res, { store_name: getSetting("store_name"), logo: getSetting("logo"), currency: getSetting("currency"), locale: getSetting("locale"), features: features() });
       if (r === "upload" && req.method === "POST") return ok(res, { url: saveImage(b.data) });
       if (r === "reports") return ok(res, reports(url.searchParams.get("from"), url.searchParams.get("to")));
       if (r === "customers") return ok(res, db.prepare(`SELECT customer_name name, phone, MAX(email) email, MAX(city) city, COUNT(*) orders,
@@ -409,10 +456,16 @@ async function handle(req, res) {
       if (r === "coupon/delete" && req.method === "POST") { db.prepare("DELETE FROM coupons WHERE code=?").run(clean(b.code, 40)); return ok(res, "deleted"); }
       if (r === "dashboard") return ok(res, dashboard());
       if (r === "orders") return ok(res, listOrders(url.searchParams));
+      if (r === "order/new" && req.method === "POST") return ok(res, await createOrder(b, true));
+      if (r === "invoices") return ok(res, db.prepare(`SELECT i.name, i.order_name, i.created, i.total, o.customer_name, o.payment_status
+        FROM invoices i LEFT JOIN orders o ON o.name=i.order_name ORDER BY i.id DESC LIMIT 1000`).all());
+      if (r === "invoice" && req.method === "GET") return ok(res, getInvoice(clean(url.searchParams.get("name"), 30)));
+      if (r === "invoice" && req.method === "POST") return ok(res, { name: createInvoice(clean(b.order, 20)) });
       if (r === "order" && req.method === "GET") {
         const o = db.prepare("SELECT * FROM orders WHERE name=?").get(url.searchParams.get("name"));
         if (!o) return fail(res, 404, "Not found");
         o.items = db.prepare("SELECT code,name,qty,rate,amount FROM order_items WHERE order_name=?").all(o.name);
+        o.invoice = db.prepare("SELECT name FROM invoices WHERE order_name=?").get(o.name)?.name || "";
         return ok(res, o);
       }
       if (r === "order" && req.method === "POST") {
