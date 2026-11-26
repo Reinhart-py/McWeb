@@ -38,20 +38,62 @@ $("#loginForm").onsubmit = async (e) => {
 $("#logout").onclick = async () => { await api("logout", {}).catch(() => {}); showLogin(); };
 $("#menuBtn").onclick = () => document.body.classList.toggle("nav-open");
 
+let features = {};
+const brandHtml = (b) => b.logo ? `<img src="${esc(b.logo)}" alt="${esc(b.store_name)}">` : esc(b.store_name);
 async function start() {
+  api("brand").then((b) => { $("#loginBrand").innerHTML = b.logo ? brandHtml(b) : ""; }).catch(() => {});
   try {
     const me = await api("me");
-    $("#brand").textContent = me.store_name;
+    features = me.features; currency = me.currency;
+    $("#brand").innerHTML = brandHtml(me);
     document.title = me.store_name + " · Admin";
+    document.querySelectorAll("#nav a[data-f]").forEach((a) => (a.hidden = !features[a.dataset.f]));
     $("#login").hidden = true; $("#app").hidden = false;
     route();
   } catch { showLogin(); }
 }
 
+// Image field: upload a file or paste a URL
+function imagePicker(holder, value) {
+  holder.innerHTML = `
+    <div class="imgpick">
+      <div class="tabs"><button type="button" class="on" data-t="up">Upload</button><button type="button" data-t="url">Image URL</button></div>
+      <div class="prev" title="Click or drop an image">${value ? `<img src="${esc(value)}" alt="">` : "Click or drop an image"}</div>
+      <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+      <input type="url" class="u" placeholder="https://…" value="${/^https?:/.test(value || "") ? esc(value) : ""}" hidden>
+    </div>`;
+  let current = value || "";
+  const prev = $(".prev", holder), file = $("[type=file]", holder), u = $(".u", holder);
+  const show = (src) => { current = src; prev.innerHTML = src ? `<img src="${esc(src)}" alt="">` : "Click or drop an image"; };
+  const upload = (f) => {
+    if (!f) return;
+    if (f.size > 5 * 1024 * 1024) return toast("Image must be under 5 MB");
+    const rd = new FileReader();
+    rd.onload = async () => {
+      try { show((await api("upload", { data: rd.result })).url); toast("Image uploaded"); } catch (e) { toast(e.message); }
+    };
+    rd.readAsDataURL(f);
+  };
+  $(".tabs", holder).onclick = (e) => {
+    const t = e.target.closest("button"); if (!t) return;
+    holder.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b === t));
+    u.hidden = t.dataset.t !== "url";
+  };
+  prev.onclick = () => file.click();
+  file.onchange = () => upload(file.files[0]);
+  prev.ondragover = (e) => { e.preventDefault(); prev.classList.add("drag"); };
+  prev.ondragleave = () => prev.classList.remove("drag");
+  prev.ondrop = (e) => { e.preventDefault(); prev.classList.remove("drag"); upload(e.dataTransfer.files[0]); };
+  u.oninput = () => show(u.value.trim());
+  return { get: () => current, clear: () => show("") };
+}
+
 /* ---------- views ---------- */
-const VIEWS = { dashboard: viewDashboard, orders: viewOrders, products: viewProducts, settings: viewSettings };
+const VIEWS = { dashboard: viewDashboard, orders: viewOrders, products: viewProducts, customers: viewCustomers, coupons: viewCoupons, reports: viewReports, settings: viewSettings };
 function route() {
-  const v = VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : "dashboard";
+  let v = VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : "dashboard";
+  if (features[v] === false) v = "dashboard";
+  closePanel();
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("on", a.dataset.v === v));
   $("#title").textContent = v[0].toUpperCase() + v.slice(1);
   document.body.classList.remove("nav-open");
@@ -69,14 +111,14 @@ function orderTable(rows) {
 }
 const ORDER_HEAD = `<thead><tr><th>Order</th><th>Customer</th><th>Payment</th><th>Total</th><th>Date</th><th>Status</th><th>Paid</th></tr></thead>`;
 
-function exportCsv(rows) {
-  const head = ["Order", "Customer", "Phone", "City", "Payment", "Total", "Date", "Status", "Paid"];
-  const data = [head, ...rows.map((o) => [o.name, o.customer_name, o.phone, o.city, o.payment_method, o.total, o.created, o.status, o.payment_status])];
-  const csv = data.map((l) => l.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+function csv(filename, head, rows) {
+  const text = [head, ...rows].map((l) => l.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-  a.download = "orders.csv"; a.click();
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+  a.download = filename; a.click();
 }
+const exportCsv = (rows) => csv("orders.csv", ["Order", "Customer", "Phone", "City", "Payment", "Total", "Date", "Status", "Paid"],
+  rows.map((o) => [o.name, o.customer_name, o.phone, o.city, o.payment_method, o.total, o.created, o.status, o.payment_status]));
 
 function ordersBlock(title, rows, limit) {
   const el = document.createElement("section");
@@ -148,7 +190,103 @@ async function viewDashboard() {
   $(".stats", view).onclick = (e) => { const s = e.target.closest(".stat"); if (s) { active = +s.dataset.i; drawStats(); } };
   $(".plist", view).onclick = (e) => { const r = e.target.closest(".prow"); if (r) openOrder(r.dataset.k); };
   drawStats();
+  if (d.low_stock.length || d.top_products.length) {
+    const g = document.createElement("div");
+    g.className = "grid2";
+    g.innerHTML = `
+      <section class="card"><div class="head"><h3>Best Sellers</h3>${features.reports ? '<a class="link" href="#reports">Reports</a>' : ""}</div>
+        ${d.top_products.length ? `<table><thead><tr><th>Product</th><th>Sold</th><th>Sales</th></tr></thead><tbody>${d.top_products.map((p) =>
+          `<tr><td>${esc(p.name)}</td><td>${p.qty}</td><td>${money(p.amount)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No sales yet</div>'}</section>
+      <section class="card"><div class="head"><h3>Low Stock</h3><a class="link" href="#products">Products</a></div>
+        ${d.low_stock.length ? d.low_stock.map((p) => `<div class="prow"><span class="avatar">${p.image ? `<img class="thumb" style="width:40px;height:40px;border-radius:50%" src="${esc(p.image)}" alt="">` : esc(p.name[0])}</span>
+          <span class="pinfo"><b>${esc(p.name)}</b><small>${esc(p.code)}</small></span><span class="chip">${p.stock} left</span></div>`).join("") : '<div class="empty">All products in stock</div>'}</section>`;
+    $(".dash", view).append(g);
+  }
   $(".dash", view).append(ordersBlock("Manage Orders", orders, 8));
+}
+
+async function viewCustomers() {
+  const list = await api("customers");
+  $("#view").innerHTML = `<section class="card">
+    <div class="head"><h3>Customers</h3><div class="tools"><input type="search" class="q" placeholder="Search name, phone, email"><button class="btn exp">Export</button></div></div>
+    <div class="twrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>City</th><th>Orders</th><th>Spent</th><th>Last order</th></tr></thead><tbody></tbody></table></div></section>`;
+  let shown = list;
+  const draw = () => {
+    const q = $(".q").value.toLowerCase();
+    shown = list.filter((c) => !q || [c.name, c.phone, c.email].some((v) => String(v || "").toLowerCase().includes(q)));
+    $("#view tbody").innerHTML = shown.length ? shown.map((c) => `<tr><td>${esc(c.name)}</td><td><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></td>
+      <td>${esc(c.email) || "—"}</td><td>${esc(c.city)}</td><td>${c.orders}</td><td>${money(c.spent)}</td><td>${esc(day(c.last_order))}</td></tr>`).join("")
+      : '<tr><td colspan="7" class="empty">No customers yet</td></tr>';
+  };
+  $(".q").oninput = draw;
+  $(".exp").onclick = () => csv("customers.csv", ["Name", "Phone", "Email", "City", "Orders", "Spent", "Last order"],
+    shown.map((c) => [c.name, c.phone, c.email, c.city, c.orders, c.spent, c.last_order]));
+  draw();
+}
+
+async function viewCoupons() {
+  const list = await api("coupons");
+  $("#view").innerHTML = `<section class="card">
+    <div class="head"><h3>Coupons</h3><div class="tools"><button class="btn add">Add coupon</button></div></div>
+    <div class="twrap"><table><thead><tr><th>Code</th><th>Discount</th><th>Min. order</th><th>Used</th><th>Active</th></tr></thead><tbody>
+    ${list.length ? list.map((c) => `<tr data-k="${esc(c.code)}"><td><b>${esc(c.code)}</b></td><td>${c.kind === "percent" ? c.value + "%" : money(c.value)}</td>
+      <td>${c.min_total ? money(c.min_total) : "—"}</td><td>${c.used}${c.max_uses ? " / " + c.max_uses : ""}</td><td><span class="chip">${c.active ? "Yes" : "No"}</span></td></tr>`).join("")
+      : '<tr><td colspan="5" class="empty">No coupons yet</td></tr>'}</tbody></table></div></section>`;
+  $(".add").onclick = () => editCoupon({ kind: "percent", active: 1 });
+  $("#view tbody").onclick = (e) => { const tr = e.target.closest("tr[data-k]"); if (tr) editCoupon(list.find((c) => c.code === tr.dataset.k)); };
+}
+function editCoupon(c) {
+  const isNew = !c.code;
+  const el = panel(`
+    <h3>${isNew ? "Add coupon" : esc(c.code)}</h3>
+    <label class="field"><span>Code</span><input name="code" value="${esc(c.code)}" ${isNew ? "" : "readonly"} placeholder="SAVE10"></label>
+    <div class="row2">
+      <label class="field"><span>Type</span><select name="kind"><option value="percent">Percent</option><option value="fixed" ${c.kind === "fixed" ? "selected" : ""}>Fixed amount</option></select></label>
+      <label class="field"><span>Value</span><input name="value" type="number" min="0" step="0.01" value="${c.value ?? ""}"></label>
+    </div>
+    <div class="row2">
+      <label class="field"><span>Minimum order</span><input name="min_total" type="number" min="0" step="0.01" value="${c.min_total || ""}"></label>
+      <label class="field"><span>Max uses (0 = no limit)</span><input name="max_uses" type="number" min="0" value="${c.max_uses || 0}"></label>
+    </div>
+    <label class="field"><span>Active</span><select name="active"><option value="1">Yes</option><option value="0" ${c.active ? "" : "selected"}>No</option></select></label>
+    <button class="btn save">Save</button>${isNew ? "" : '<button class="btn ghost del">Delete coupon</button>'}`);
+  const v = (n) => $(`[name=${n}]`, el).value;
+  $(".save", el).onclick = async () => {
+    try { await api("coupon", { code: v("code"), kind: v("kind"), value: v("value"), min_total: v("min_total"), max_uses: v("max_uses"), active: v("active") }); toast("Saved"); closePanel(); route(); }
+    catch (e) { toast(e.message); }
+  };
+  if ($(".del", el)) $(".del", el).onclick = async () => {
+    if (!confirm(`Delete coupon ${c.code}?`)) return;
+    await api("coupon/delete", { code: c.code }); toast("Deleted"); closePanel(); route();
+  };
+}
+
+async function viewReports() {
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const now = new Date(), from0 = iso(new Date(now.getFullYear(), now.getMonth(), 1)), to0 = iso(now);
+  $("#view").innerHTML = `<div class="dash">
+    <section class="card"><div class="head"><h3>Sales report</h3><div class="tools">
+      <input type="date" class="f" value="${from0}"><input type="date" class="t" value="${to0}"><button class="btn go">Show</button><button class="btn ghost exp">Export</button></div></div>
+      <div class="stats rs"></div></section>
+    <div class="grid2"><section class="card"><div class="head"><h3>By product</h3></div><div class="twrap bp"></div></section>
+      <section class="card"><div class="head"><h3>By payment</h3></div><div class="twrap bpay"></div></section></div>
+    <section class="card"><div class="head"><h3>By day</h3></div><div class="twrap bd"></div></section></div>`;
+  let rep;
+  const tbl = (head, rows) => rows.length ? `<table><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map((r) =>
+    `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>` : '<div class="empty">No sales in this period</div>';
+  const load = async () => {
+    rep = await api(`reports?from=${$(".f").value}&to=${$(".t").value}`);
+    const s = rep.summary;
+    $(".rs").innerHTML = [["Orders", s.orders, "orders"], ["Sales", money(s.sales), "money"], ["Paid", money(s.paid), "check"],
+      ["Discounts", money(s.discounts), "alert"], ["Shipping", money(s.shipping), "clock"]].map(([l, v, i], n) =>
+      `<div class="stat ${n === 1 ? "on" : ""}"><span class="ico">${icon(i)}</span><div class="num">${esc(v)}</div><div class="lbl">${l}</div></div>`).join("");
+    $(".bp").innerHTML = tbl(["Product", "Sold", "Sales"], rep.by_product.map((p) => [esc(p.name), p.qty, money(p.amount)]));
+    $(".bpay").innerHTML = tbl(["Payment", "Orders", "Sales"], rep.by_payment.map((p) => [esc(p.payment_method), p.orders, money(p.sales)]));
+    $(".bd").innerHTML = tbl(["Day", "Orders", "Sales"], rep.by_day.map((d) => [d.day, d.orders, money(d.sales)]));
+  };
+  $(".go").onclick = () => load().catch((e) => toast(e.message));
+  $(".exp").onclick = () => csv("sales-report.csv", ["Day", "Orders", "Sales"], rep.by_day.map((d) => [d.day, d.orders, d.sales]));
+  await load();
 }
 
 async function viewOrders() {
@@ -182,59 +320,83 @@ async function openOrder(name) {
     </dl>
     <div class="twrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead><tbody>
       ${o.items.map((i) => `<tr><td>${esc(i.name)}</td><td>${i.qty}</td><td>${money(i.amount)}</td></tr>`).join("")}
-      <tr><td><b>Total</b></td><td></td><td><b>${money(o.total)}</b></td></tr></tbody></table></div>
+      </tbody></table></div>
+    <div>
+      ${o.subtotal ? `<div class="sumrow"><span class="muted">Subtotal</span><span>${money(o.subtotal)}</span></div>` : ""}
+      ${o.discount ? `<div class="sumrow"><span class="muted">Discount ${esc(o.coupon)}</span><span>− ${money(o.discount)}</span></div>` : ""}
+      ${o.shipping ? `<div class="sumrow"><span class="muted">Shipping</span><span>${money(o.shipping)}</span></div>` : ""}
+      <div class="sumrow"><b>Total</b><b>${money(o.total)}</b></div>
+    </div>
     <div class="row2">
       <label class="field"><span>Status</span><select name="status">${STATUSES.map((s) => `<option ${s === o.status ? "selected" : ""}>${s}</option>`).join("")}</select></label>
       <label class="field"><span>Payment</span><select name="payment_status">${["Unpaid", "Paid", "Refunded"].map((s) => `<option ${s === o.payment_status ? "selected" : ""}>${s}</option>`).join("")}</select></label>
     </div>
-    <button class="btn save">Save</button>`);
+    <label class="field"><span>Staff note</span><textarea name="admin_note" rows="2">${esc(o.admin_note)}</textarea></label>
+    <div class="row2"><button class="btn save">Save</button><button class="btn ghost prt">Print</button></div>`);
+  $(".prt", p).onclick = () => print();
   $(".save", p).onclick = async () => {
-    await api("order", { name: o.name, status: $("[name=status]", p).value, payment_status: $("[name=payment_status]", p).value });
-    toast("Saved"); closePanel(); route();
+    try {
+      await api("order", { name: o.name, status: $("[name=status]", p).value, payment_status: $("[name=payment_status]", p).value, admin_note: $("[name=admin_note]", p).value });
+      toast("Saved"); closePanel(); route();
+    } catch (e) { toast(e.message); }
   };
 }
 
 /* ---------- products ---------- */
 async function viewProducts() {
-  const [list, d] = await Promise.all([api("products"), api("dashboard")]);
-  currency = d.currency;
+  const list = await api("products");
+  const cats = [...new Set(list.map((p) => p.category).filter(Boolean))].sort();
   $("#view").innerHTML = `
   <section class="card">
-    <div class="head"><h3>Products</h3><div class="tools"><button class="btn add">Add product</button></div></div>
+    <div class="head"><h3>Products</h3><div class="tools">
+      <input type="search" class="q" placeholder="Search products">
+      ${features.categories && cats.length ? `<select class="cat"><option value="">All categories</option>${cats.map((c) => `<option>${esc(c)}</option>`).join("")}</select>` : ""}
+      <button class="btn add">Add product</button></div></div>
     <div class="twrap"><table>
-      <thead><tr><th></th><th>Name</th><th>Code</th><th>Price</th><th>Stock</th><th>Shown</th></tr></thead>
-      <tbody>${list.length ? list.map((p) => `
-        <tr data-k="${esc(p.code)}">
-          <td>${p.image ? `<img class="thumb" src="${esc(p.image)}" alt="">` : '<span class="thumb" style="display:inline-block"></span>'}</td>
-          <td>${esc(p.name)}</td><td>${esc(p.code)}</td><td>${money(p.price)}</td><td>${p.stock}</td>
-          <td><span class="chip">${p.active ? "Yes" : "No"}</span></td>
-        </tr>`).join("") : '<tr><td colspan="6" class="empty">No products yet</td></tr>'}</tbody>
-    </table></div>
+      <thead><tr><th></th><th>Name</th><th>Code</th>${features.categories ? "<th>Category</th>" : ""}<th>Price</th>${features.inventory ? "<th>Stock</th>" : ""}<th>Shown</th></tr></thead>
+      <tbody></tbody></table></div>
   </section>`;
-  $(".add").onclick = () => editProduct({ active: 1, stock: 0 });
-  $("#view tbody").onclick = (e) => { const tr = e.target.closest("tr[data-k]"); if (tr) editProduct(list.find((p) => p.code === tr.dataset.k)); };
+  const draw = () => {
+    const q = $(".q").value.toLowerCase(), c = $(".cat")?.value || "";
+    const rows = list.filter((p) => (!c || p.category === c) && (!q || (p.name + " " + p.code).toLowerCase().includes(q)));
+    $("#view tbody").innerHTML = rows.length ? rows.map((p) => `
+      <tr data-k="${esc(p.code)}">
+        <td>${p.image ? `<img class="thumb" src="${esc(p.image)}" alt="">` : '<span class="thumb" style="display:inline-block"></span>'}</td>
+        <td>${esc(p.name)}</td><td>${esc(p.code)}</td>${features.categories ? `<td>${esc(p.category) || "—"}</td>` : ""}<td>${money(p.price)}</td>
+        ${features.inventory ? `<td>${p.stock}</td>` : ""}<td><span class="chip">${p.active ? "Yes" : "No"}</span></td>
+      </tr>`).join("") : '<tr><td colspan="7" class="empty">No products</td></tr>';
+  };
+  $(".q").oninput = draw;
+  if ($(".cat")) $(".cat").onchange = draw;
+  $(".add").onclick = () => editProduct({ active: 1, stock: 0 }, cats);
+  $("#view tbody").onclick = (e) => { const tr = e.target.closest("tr[data-k]"); if (tr) editProduct(list.find((p) => p.code === tr.dataset.k), cats); };
+  draw();
 }
-function editProduct(p) {
+function editProduct(p, cats) {
   const isNew = !p.code;
   const el = panel(`
     <h3>${isNew ? "Add product" : esc(p.name)}</h3>
+    <div class="field"><span>Image</span><div class="img"></div></div>
     <label class="field"><span>Name</span><input name="name" value="${esc(p.name)}" required></label>
     <label class="field"><span>Code (same as the website product id)</span><input name="code" value="${esc(p.code)}" ${isNew ? "" : "readonly"}></label>
     <div class="row2">
       <label class="field"><span>Price</span><input name="price" type="number" min="0" step="0.01" value="${p.price ?? ""}"></label>
-      <label class="field"><span>Old price (optional)</span><input name="compare_price" type="number" min="0" step="0.01" value="${p.compare_price || ""}"></label>
+      <label class="field"><span>Old price</span><input name="compare_price" type="number" min="0" step="0.01" value="${p.compare_price || ""}"></label>
     </div>
     <div class="row2">
-      <label class="field"><span>Stock</span><input name="stock" type="number" min="0" value="${p.stock ?? 0}"></label>
+      ${features.inventory ? `<label class="field"><span>Stock</span><input name="stock" type="number" min="0" value="${p.stock ?? 0}"></label>` : `<input name="stock" type="hidden" value="${p.stock ?? 0}">`}
       <label class="field"><span>Shown on website</span><select name="active"><option value="1">Yes</option><option value="0" ${p.active ? "" : "selected"}>No</option></select></label>
     </div>
-    <label class="field"><span>Image URL</span><input name="image" value="${esc(p.image)}"></label>
+    ${features.categories ? `<label class="field"><span>Category</span><input name="category" list="catlist" value="${esc(p.category)}"><datalist id="catlist">${cats.map((c) => `<option value="${esc(c)}">`).join("")}</datalist></label>` : `<input name="category" type="hidden" value="${esc(p.category)}">`}
+    <label class="field"><span>Description</span><textarea name="description" rows="3">${esc(p.description)}</textarea></label>
     <button class="btn save">Save</button>
     ${isNew ? "" : '<button class="btn ghost del">Delete product</button>'}`);
+  const img = imagePicker($(".img", el), p.image);
   const val = (n) => $(`[name=${n}]`, el).value;
   $(".save", el).onclick = async () => {
     try {
-      await api("product", { name: val("name"), code: val("code"), price: val("price"), compare_price: val("compare_price"), stock: val("stock"), active: val("active"), image: val("image") });
+      await api("product", { name: val("name"), code: val("code"), price: val("price"), compare_price: val("compare_price"), stock: val("stock"),
+        active: val("active"), image: img.get(), category: val("category"), description: val("description") });
       toast("Saved"); closePanel(); route();
     } catch (e) { toast(e.message); }
   };
@@ -245,33 +407,40 @@ function editProduct(p) {
 }
 
 /* ---------- settings ---------- */
+const FEATURE_NAMES = { customers: "Customers", coupons: "Coupons", inventory: "Stock tracking", shipping: "Shipping fees", categories: "Categories", reports: "Reports" };
 async function viewSettings() {
   const s = await api("settings");
-  const f = (k, label, type = "text") => `<label class="field"><span>${label}</span><input name="${k}" type="${type}" value="${esc(s[k])}"></label>`;
+  const f = (k, label, type = "text", extra = "") => `<label class="field"><span>${label}</span><input name="${k}" type="${type}" value="${esc(s[k])}" ${extra}></label>`;
   const c = (k, label) => `<label class="check"><input type="checkbox" name="${k}" ${s[k] === "1" ? "checked" : ""}>${label}</label>`;
   $("#view").innerHTML = `
   <section class="card"><form class="form" id="setForm">
     <h3>Store</h3>
+    <div class="field"><span>Logo (PNG recommended)</span><div class="logo"></div></div>
     ${f("store_name", "Store name")}
-    <div class="row2">${f("currency", "Currency (e.g. AED, USD)")}${f("whatsapp_number", "WhatsApp number (country code, no +)")}</div>
-    ${f("site_url", "Website address (e.g. https://mystore.com)")}
-    ${f("allow_origin", "Website allowed to call this server (* = any)")}
-    <h3>Payment options</h3>
-    ${c("enable_cash_on_delivery", "Cash on delivery")}
-    ${c("enable_card", "Card payment (Stripe)")}
-    ${f("stripe_secret_key", "Stripe secret key", "password")}
-    ${f("stripe_webhook_secret", "Stripe webhook signing secret", "password")}
-    <p class="muted" style="margin:0">Stripe webhook URL: <b>${esc(location.origin)}/api/method/store_admin.api.stripe_webhook</b> (event: checkout.session.completed)</p>
+    <div class="row2">${f("currency", "Currency")}${f("whatsapp_number", "WhatsApp number")}</div>
+    ${f("site_url", "Website address", "url")}
+    ${f("allow_origin", "Allowed website (* = any)")}
+    <h3>Features</h3>
+    <div class="switches">${Object.entries(FEATURE_NAMES).map(([k, l]) => c("feature_" + k, l)).join("")}</div>
+    <h3>Shipping</h3>
+    <div class="row2">${f("shipping_fee", "Shipping fee", "number", 'min="0" step="0.01"')}${f("free_shipping_over", "Free shipping over (0 = never)", "number", 'min="0" step="0.01"')}</div>
+    ${f("low_stock", "Low stock alert at", "number", 'min="0"')}
+    <h3>Payments</h3>
+    <div class="switches">${c("enable_card", "Card (Stripe)")}${c("enable_cash_on_delivery", "Cash on delivery")}${c("enable_whatsapp", "WhatsApp order")}</div>
+    ${f("stripe_secret_key", "Stripe secret key", "password", 'autocomplete="off"')}
+    ${f("stripe_webhook_secret", "Stripe webhook secret", "password", 'autocomplete="off"')}
+    <p class="muted" style="margin:0">Webhook URL: <b>${esc(location.origin)}/api/method/store_admin.api.stripe_webhook</b> · event <b>checkout.session.completed</b></p>
     <h3>Admin password</h3>
-    ${f("new_password", "New password (leave empty to keep)", "password")}
+    ${f("new_password", "New password", "password", 'autocomplete="new-password" placeholder="Leave empty to keep"')}
     <div><button class="btn" type="submit">Save settings</button></div>
   </form></section>`;
+  const logo = imagePicker($(".logo"), s.logo);
   $("#setForm").onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target), body = Object.fromEntries(fd);
-    body.enable_cash_on_delivery = fd.get("enable_cash_on_delivery") ? "1" : "0";
-    body.enable_card = fd.get("enable_card") ? "1" : "0";
-    try { await api("settings", body); toast("Saved"); viewSettings(); } catch (err) { toast(err.message); }
+    for (const k of ["enable_card", "enable_cash_on_delivery", "enable_whatsapp", ...Object.keys(FEATURE_NAMES).map((x) => "feature_" + x)]) body[k] = fd.get(k) ? "1" : "0";
+    body.logo = logo.get();
+    try { await api("settings", body); toast("Saved"); start(); } catch (err) { toast(err.message); }
   };
 }
 

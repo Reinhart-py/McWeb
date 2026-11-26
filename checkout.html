@@ -47,6 +47,7 @@
       <label>Address *<input name="address" autocomplete="street-address" required maxlength="500" placeholder="Building, street, area"></label>
       <label>City / Emirate *<input name="city" autocomplete="address-level2" required maxlength="80"></label>
       <label>Notes<textarea name="notes" rows="3" maxlength="1000"></textarea></label>
+      <label id="couponBox" hidden>Coupon code<input name="coupon" maxlength="40" autocomplete="off"></label>
       <h2>Payment</h2>
       <div class="pay" id="pay"></div>
       <button class="btn-dark" type="submit" id="placeBtn">Place order</button>
@@ -67,7 +68,7 @@ if (!items.length) {
   sum.innerHTML = `<h2 style="margin-top:0">Your order</h2>` + items.map((i) => { const p = byId(i.id); return `
     <div class="it"><img src="${p.imgs[0]}" alt=""><div>${p.name}<br><span style="color:#6b6b6b">Qty ${i.q}</span></div><b style="font-weight:500">${aed(p.price * i.q)}</b></div>`; }).join("") +
     (items.some((i) => byId(i.id).type === "parfum") ? `<p style="font-size:13px;margin:12px 0 0">🎁 ${FREE_KIT_NOTE}</p>` : "") +
-    `<div class="tot"><span>Total</span><b style="font-weight:600">${aed(total)}</b></div>`;
+    `<div id="shipLine"></div><div class="tot"><span>Total</span><b style="font-weight:600" id="totLine">${aed(total)}</b></div>`;
   if (new URLSearchParams(location.search).get("cancelled")) cancelNote.hidden = false;
 
   const OPTS = {
@@ -82,10 +83,17 @@ if (!items.length) {
   const api = (fn) => STORE_API.replace(/\/$/, "") + "/api/method/store_admin.api." + fn;
   if (STORE_API) {
     fetch(api("get_store_config")).then((r) => r.json()).then((j) => {
-      const o = j.message.payment_options, list = [];
+      const m = j.message, o = m.payment_options, list = [];
       if (o.card) list.push("Card");
       if (o.cash_on_delivery) list.push("Cash on Delivery");
-      drawPay([...list, "WhatsApp"]);
+      if (o.whatsapp !== false) list.push("WhatsApp");
+      if (list.length) drawPay(list);
+      if (m.coupons) couponBox.hidden = false;
+      if (m.shipping) {
+        const fee = m.shipping.free_over && total >= m.shipping.free_over ? 0 : m.shipping.fee;
+        shipLine.innerHTML = `<div class="tot" style="font-size:14px"><span>Shipping</span><span>${fee ? aed(fee) : "Free"}</span></div>`;
+        totLine.textContent = aed(total + fee);
+      }
     }).catch(() => {});
   }
 

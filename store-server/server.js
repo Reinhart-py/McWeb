@@ -29,11 +29,34 @@ CREATE TABLE IF NOT EXISTS orders (
   created TEXT DEFAULT (datetime('now')));
 CREATE TABLE IF NOT EXISTS order_items (
   order_name TEXT, code TEXT, name TEXT, qty INTEGER, rate REAL, amount REAL);
+CREATE TABLE IF NOT EXISTS coupons (
+  code TEXT PRIMARY KEY, kind TEXT DEFAULT 'percent', value REAL DEFAULT 0,
+  min_total REAL DEFAULT 0, max_uses INTEGER DEFAULT 0, used INTEGER DEFAULT 0, active INTEGER DEFAULT 1);
 `);
+// Add new columns to older databases
+const addCol = (t, c, def) => {
+  if (!db.prepare(`PRAGMA table_info(${t})`).all().some((x) => x.name === c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${def}`);
+};
+addCol("products", "category", "TEXT DEFAULT ''");
+addCol("products", "description", "TEXT DEFAULT ''");
+addCol("orders", "subtotal", "REAL DEFAULT 0");
+addCol("orders", "discount", "REAL DEFAULT 0");
+addCol("orders", "shipping", "REAL DEFAULT 0");
+addCol("orders", "coupon", "TEXT DEFAULT ''");
+addCol("orders", "admin_note", "TEXT DEFAULT ''");
+
+const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// Modules that can be switched on/off in Settings
+const FEATURES = ["customers", "coupons", "inventory", "shipping", "categories", "reports"];
 
 const DEFAULTS = {
-  store_name: "My Store", currency: "AED", whatsapp_number: "", site_url: "",
-  allow_origin: "*", enable_cash_on_delivery: "1", enable_card: "0",
+  store_name: "My Store", currency: "AED", whatsapp_number: "", site_url: "", logo: "",
+  allow_origin: "*", enable_cash_on_delivery: "1", enable_card: "0", enable_whatsapp: "1",
+  shipping_fee: "0", free_shipping_over: "0", low_stock: "5",
+  feature_customers: "1", feature_coupons: "1", feature_inventory: "1", feature_shipping: "1",
+  feature_categories: "1", feature_reports: "1",
   stripe_secret_key: process.env.STRIPE_SECRET_KEY || "",
   stripe_webhook_secret: process.env.STRIPE_WEBHOOK_SECRET || "",
 };
@@ -107,15 +130,38 @@ const clean = (v, max = 300) => String(v ?? "").trim().slice(0, max);
 const money = (n) => Math.round(Number(n || 0) * 100) / 100;
 
 /* ---------- shop logic ---------- */
+const on = (k) => getSetting(k) === "1";
 function storeConfig() {
   return {
     store_name: getSetting("store_name"), currency: getSetting("currency"),
     whatsapp_number: getSetting("whatsapp_number"),
+    coupons: on("feature_coupons"),
+    shipping: on("feature_shipping") ? { fee: Number(getSetting("shipping_fee")), free_over: Number(getSetting("free_shipping_over")) } : null,
     payment_options: {
-      cash_on_delivery: getSetting("enable_cash_on_delivery") === "1",
-      card: getSetting("enable_card") === "1" && !!getSetting("stripe_secret_key"),
+      cash_on_delivery: on("enable_cash_on_delivery"),
+      card: on("enable_card") && !!getSetting("stripe_secret_key"),
+      whatsapp: on("enable_whatsapp"),
     },
   };
+}
+function findCoupon(code, subtotal) {
+  if (!code || !on("feature_coupons")) return null;
+  const c = db.prepare("SELECT * FROM coupons WHERE code=? COLLATE NOCASE AND active=1").get(clean(code, 40));
+  if (!c) throw new Error("This coupon code is not valid.");
+  if (c.max_uses && c.used >= c.max_uses) throw new Error("This coupon has been fully used.");
+  if (subtotal < c.min_total) throw new Error(`This coupon needs a minimum order of ${c.min_total}.`);
+  const discount = c.kind === "fixed" ? Math.min(c.value, subtotal) : money((subtotal * Math.min(c.value, 100)) / 100);
+  return { code: c.code, discount };
+}
+function shippingFor(subtotal) {
+  if (!on("feature_shipping")) return 0;
+  const fee = Number(getSetting("shipping_fee")) || 0, free = Number(getSetting("free_shipping_over")) || 0;
+  return free && subtotal >= free ? 0 : fee;
+}
+function restock(order, sign) {
+  if (!on("feature_inventory")) return;
+  for (const i of db.prepare("SELECT code,qty FROM order_items WHERE order_name=?").all(order))
+    db.prepare("UPDATE products SET stock=MAX(0, stock + ?) WHERE code=?").run(sign * i.qty, i.code);
 }
 
 async function createOrder(b) {
@@ -124,7 +170,7 @@ async function createOrder(b) {
   const payment_method = clean(b.payment_method, 30);
   if (!customer_name || !phone || !address || !city) throw new Error("Please fill name, phone, address and city.");
   const cfg = storeConfig().payment_options;
-  const allowed = { "Card": cfg.card, "Cash on Delivery": cfg.cash_on_delivery, "WhatsApp": true };
+  const allowed = { "Card": cfg.card, "Cash on Delivery": cfg.cash_on_delivery, "WhatsApp": cfg.whatsapp };
   if (!allowed[payment_method]) throw new Error("This payment option is not available.");
 
   let items = b.items;
@@ -135,28 +181,36 @@ async function createOrder(b) {
     if (!(qty >= 1 && qty <= 20)) throw new Error("Quantity must be 1 to 20.");
     const p = db.prepare("SELECT * FROM products WHERE code=? AND active=1").get(clean(i.id, 80));
     if (!p) throw new Error("A product in your bag is no longer available.");
+    if (on("feature_inventory") && p.stock < qty) throw new Error(`Only ${p.stock} left of ${p.name}.`);
     return { code: p.code, name: p.name, qty, rate: p.price, amount: money(p.price * qty) };
   });
-  const total = money(lines.reduce((s, l) => s + l.amount, 0));
+  const subtotal = money(lines.reduce((s, l) => s + l.amount, 0));
+  const coupon = findCoupon(b.coupon, subtotal);
+  const discount = coupon ? coupon.discount : 0;
+  const shipping = shippingFor(subtotal);
+  const total = money(subtotal - discount + shipping);
 
   db.exec("BEGIN");
   let name;
   try {
-    const r = db.prepare(`INSERT INTO orders(customer_name,phone,email,address,city,notes,payment_method,total)
-      VALUES(?,?,?,?,?,?,?,?)`).run(customer_name, phone, clean(b.email, 120), address, city, clean(b.notes, 1000), payment_method, total);
+    const r = db.prepare(`INSERT INTO orders(customer_name,phone,email,address,city,notes,payment_method,subtotal,discount,shipping,coupon,total)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(customer_name, phone, clean(b.email, 120), address, city, clean(b.notes, 1000), payment_method,
+      subtotal, discount, shipping, coupon ? coupon.code : "", total);
     name = "ORD-" + String(r.lastInsertRowid).padStart(5, "0");
     db.prepare("UPDATE orders SET name=? WHERE id=?").run(name, r.lastInsertRowid);
     const ins = db.prepare("INSERT INTO order_items(order_name,code,name,qty,rate,amount) VALUES(?,?,?,?,?,?)");
     for (const l of lines) ins.run(name, l.code, l.name, l.qty, l.rate, l.amount);
+    if (coupon) db.prepare("UPDATE coupons SET used=used+1 WHERE code=?").run(coupon.code);
+    restock(name, -1);
     db.exec("COMMIT");
   } catch (e) { db.exec("ROLLBACK"); throw e; }
 
-  const out = { order: name, total, currency: getSetting("currency") };
-  if (payment_method === "Card") out.checkout_url = await stripeCheckout(name, lines, clean(b.email, 120));
+  const out = { order: name, subtotal, discount, shipping, total, currency: getSetting("currency") };
+  if (payment_method === "Card") out.checkout_url = await stripeCheckout(name, lines, clean(b.email, 120), { discount, shipping, total });
   return out;
 }
 
-async function stripeCheckout(order, lines, email) {
+async function stripeCheckout(order, lines, email, extra) {
   const site = getSetting("site_url").replace(/\/$/, "");
   if (!site) throw new Error("Card payment is not set up (site URL missing).");
   const f = new URLSearchParams({
@@ -165,18 +219,30 @@ async function stripeCheckout(order, lines, email) {
     cancel_url: `${site}/checkout.html?cancelled=1`,
   });
   if (email) f.set("customer_email", email);
-  lines.forEach((l, i) => {
+  // Stripe has no negative lines, so a discounted order is sent as one line with the final total
+  const items = extra.discount
+    ? [{ qty: 1, rate: extra.total, name: `Order ${order}` }]
+    : [...lines, ...(extra.shipping ? [{ qty: 1, rate: extra.shipping, name: "Shipping" }] : [])];
+  items.forEach((l, i) => {
     f.set(`line_items[${i}][quantity]`, l.qty);
     f.set(`line_items[${i}][price_data][currency]`, getSetting("currency").toLowerCase());
     f.set(`line_items[${i}][price_data][unit_amount]`, Math.round(l.rate * 100));
     f.set(`line_items[${i}][price_data][product_data][name]`, l.name);
   });
-  const r = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-    method: "POST", body: f,
-    headers: { Authorization: `Bearer ${getSetting("stripe_secret_key")}` },
-  });
-  const j = await r.json();
-  if (!r.ok) { console.error("Stripe:", j.error?.message); throw new Error("Card payment could not start. Please try another option."); }
+  let r, j;
+  try {
+    r = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST", body: f,
+      headers: { Authorization: `Bearer ${getSetting("stripe_secret_key")}` },
+    });
+    j = await r.json();
+  } catch (e) { j = { error: { message: e.message } }; }
+  if (!r?.ok) {
+    console.error("Stripe:", j.error?.message);
+    db.prepare("UPDATE orders SET status='Cancelled', admin_note='Card payment could not start' WHERE name=?").run(order);
+    restock(order, 1);
+    throw new Error("Card payment could not start. Please try another option.");
+  }
   db.prepare("UPDATE orders SET stripe_session_id=? WHERE name=?").run(j.id, order);
   return j.url;
 }
@@ -227,7 +293,38 @@ function dashboard() {
     ],
     chart: { labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], orders, paid: paidArr },
     pending: db.prepare("SELECT name,customer_name,total,payment_method,created FROM orders WHERE status='Pending' ORDER BY id DESC LIMIT 4").all(),
+    low_stock: on("feature_inventory") ? db.prepare("SELECT code,name,stock,image FROM products WHERE active=1 AND stock<=? ORDER BY stock LIMIT 6").all(Number(getSetting("low_stock")) || 0) : [],
+    top_products: db.prepare(`SELECT i.name, SUM(i.qty) qty, SUM(i.amount) amount FROM order_items i JOIN orders o ON o.name=i.order_name
+      WHERE o.status!='Cancelled' GROUP BY i.code ORDER BY qty DESC LIMIT 5`).all(),
   };
+}
+function features() { return Object.fromEntries(FEATURES.map((f) => [f, on("feature_" + f)])); }
+function reports(from, to) {
+  const f = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : "2000-01-01", t = /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : "2999-12-31";
+  const w = "date(created) BETWEEN ? AND ? AND status!='Cancelled'";
+  return {
+    from: f, to: t,
+    summary: db.prepare(`SELECT COUNT(*) orders, COALESCE(SUM(total),0) sales, COALESCE(SUM(discount),0) discounts,
+      COALESCE(SUM(shipping),0) shipping, COALESCE(SUM(CASE WHEN payment_status='Paid' THEN total END),0) paid FROM orders WHERE ${w}`).get(f, t),
+    by_day: db.prepare(`SELECT date(created) day, COUNT(*) orders, SUM(total) sales FROM orders WHERE ${w} GROUP BY day ORDER BY day`).all(f, t),
+    by_product: db.prepare(`SELECT i.name, SUM(i.qty) qty, SUM(i.amount) amount FROM order_items i JOIN orders o ON o.name=i.order_name
+      WHERE date(o.created) BETWEEN ? AND ? AND o.status!='Cancelled' GROUP BY i.code ORDER BY amount DESC`).all(f, t),
+    by_payment: db.prepare(`SELECT payment_method, COUNT(*) orders, SUM(total) sales FROM orders WHERE ${w} GROUP BY payment_method`).all(f, t),
+  };
+}
+// Save an uploaded image (data URL). Only real PNG / JPEG / WEBP / GIF files are accepted.
+function saveImage(dataUrl) {
+  const m = /^data:image\/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ""));
+  if (!m) throw new Error("Please choose a PNG, JPG, WEBP or GIF image.");
+  const buf = Buffer.from(m[2], "base64");
+  if (buf.length > 5 * 1024 * 1024) throw new Error("Image must be under 5 MB.");
+  const sig = buf.subarray(0, 12).toString("hex");
+  const real = sig.startsWith("89504e47") ? "png" : sig.startsWith("ffd8ff") ? "jpg" : sig.startsWith("47494638") ? "gif"
+    : sig.startsWith("52494646") && buf.subarray(8, 12).toString() === "WEBP" ? "webp" : "";
+  if (!real) throw new Error("This file is not a valid image.");
+  const file = crypto.randomBytes(12).toString("hex") + "." + real;
+  fs.writeFileSync(path.join(UPLOAD_DIR, file), buf);
+  return "/uploads/" + file;
 }
 function listOrders(q) {
   const where = [], args = [];
@@ -236,7 +333,8 @@ function listOrders(q) {
   return db.prepare(`SELECT name,customer_name,phone,city,status,payment_method,payment_status,total,created FROM orders
     ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY id DESC LIMIT 500`).all(...args);
 }
-const SETTING_KEYS = ["store_name", "currency", "whatsapp_number", "site_url", "allow_origin", "enable_cash_on_delivery", "enable_card", "stripe_secret_key", "stripe_webhook_secret"];
+const SETTING_KEYS = ["store_name", "currency", "whatsapp_number", "site_url", "logo", "allow_origin", "enable_cash_on_delivery", "enable_card", "enable_whatsapp",
+  "shipping_fee", "free_shipping_over", "low_stock", "stripe_secret_key", "stripe_webhook_secret", ...FEATURES.map((f) => "feature_" + f)];
 const SECRET_KEYS = ["stripe_secret_key", "stripe_webhook_secret"];
 
 /* ---------- routes ---------- */
@@ -253,6 +351,7 @@ async function handle(req, res) {
     const fn = p.slice(API.length);
     try {
       if (fn === "get_store_config") return ok(res, storeConfig(), cors);
+      if (fn === "get_products") return ok(res, db.prepare("SELECT code,name,price,compare_price,stock,image,category,description FROM products WHERE active=1 ORDER BY name").all(), cors);
       if (fn === "order_status") {
         const o = db.prepare("SELECT name,status,payment_status,total FROM orders WHERE name=?").get(clean(url.searchParams.get("order"), 20));
         return o ? ok(res, o, cors) : fail(res, 404, "Order not found", cors);
@@ -287,11 +386,27 @@ async function handle(req, res) {
 
   // Admin API (login needed)
   if (p.startsWith("/admin/api/")) {
-    if (!isAdmin(req)) return fail(res, 401, "Please log in");
-    const b = req.method === "POST" ? parseBody(await readBody(req), req.headers["content-type"]) : {};
     const r = p.slice("/admin/api/".length);
+    if (r === "brand") return ok(res, { store_name: getSetting("store_name"), logo: getSetting("logo") });
+    if (!isAdmin(req)) return fail(res, 401, "Please log in");
     try {
-      if (r === "me") return ok(res, { store_name: getSetting("store_name") });
+      const b = req.method === "POST" ? parseBody(await readBody(req, r === "upload" ? 8e6 : 1e6), req.headers["content-type"]) : {};
+      if (r === "me") return ok(res, { store_name: getSetting("store_name"), logo: getSetting("logo"), currency: getSetting("currency"), features: features() });
+      if (r === "upload" && req.method === "POST") return ok(res, { url: saveImage(b.data) });
+      if (r === "reports") return ok(res, reports(url.searchParams.get("from"), url.searchParams.get("to")));
+      if (r === "customers") return ok(res, db.prepare(`SELECT customer_name name, phone, MAX(email) email, MAX(city) city, COUNT(*) orders,
+        SUM(CASE WHEN status!='Cancelled' THEN total ELSE 0 END) spent, MAX(created) last_order FROM orders GROUP BY phone ORDER BY last_order DESC LIMIT 1000`).all());
+      if (r === "coupons") return ok(res, db.prepare("SELECT * FROM coupons ORDER BY code").all());
+      if (r === "coupon" && req.method === "POST") {
+        const code = clean(b.code, 40).toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+        if (!code) throw new Error("Coupon code is needed.");
+        if (!["percent", "fixed"].includes(b.kind)) throw new Error("Pick percent or fixed amount.");
+        db.prepare(`INSERT INTO coupons(code,kind,value,min_total,max_uses,active) VALUES(?,?,?,?,?,?)
+          ON CONFLICT(code) DO UPDATE SET kind=excluded.kind, value=excluded.value, min_total=excluded.min_total, max_uses=excluded.max_uses, active=excluded.active`)
+          .run(code, b.kind, money(b.value), money(b.min_total), parseInt(b.max_uses, 10) || 0, String(b.active) === "0" ? 0 : 1);
+        return ok(res, "saved");
+      }
+      if (r === "coupon/delete" && req.method === "POST") { db.prepare("DELETE FROM coupons WHERE code=?").run(clean(b.code, 40)); return ok(res, "deleted"); }
       if (r === "dashboard") return ok(res, dashboard());
       if (r === "orders") return ok(res, listOrders(url.searchParams));
       if (r === "order" && req.method === "GET") {
@@ -303,18 +418,23 @@ async function handle(req, res) {
       if (r === "order" && req.method === "POST") {
         if (b.status && !STATUSES.includes(b.status)) throw new Error("Bad status");
         if (b.payment_status && !PAY_STATUSES.includes(b.payment_status)) throw new Error("Bad payment status");
-        db.prepare("UPDATE orders SET status=COALESCE(?,status), payment_status=COALESCE(?,payment_status) WHERE name=?")
-          .run(b.status || null, b.payment_status || null, clean(b.name, 20));
+        const name = clean(b.name, 20), old = db.prepare("SELECT status FROM orders WHERE name=?").get(name);
+        if (!old) throw new Error("Order not found");
+        db.prepare("UPDATE orders SET status=COALESCE(?,status), payment_status=COALESCE(?,payment_status), admin_note=COALESCE(?,admin_note) WHERE name=?")
+          .run(b.status || null, b.payment_status || null, b.admin_note == null ? null : clean(b.admin_note, 1000), name);
+        // Stock goes back when an order is cancelled, and out again if it is un-cancelled
+        if (b.status && (b.status === "Cancelled") !== (old.status === "Cancelled")) restock(name, b.status === "Cancelled" ? 1 : -1);
         return ok(res, "saved");
       }
       if (r === "products") return ok(res, db.prepare("SELECT * FROM products ORDER BY name").all());
       if (r === "product" && req.method === "POST") {
         const code = clean(b.code, 80).toLowerCase().replace(/[^a-z0-9-_]/g, "-");
         if (!code || !clean(b.name)) throw new Error("Code and name are needed.");
-        db.prepare(`INSERT INTO products(code,name,price,compare_price,stock,active,image) VALUES(?,?,?,?,?,?,?)
+        db.prepare(`INSERT INTO products(code,name,price,compare_price,stock,active,image,category,description) VALUES(?,?,?,?,?,?,?,?,?)
           ON CONFLICT(code) DO UPDATE SET name=excluded.name, price=excluded.price, compare_price=excluded.compare_price,
-          stock=excluded.stock, active=excluded.active, image=excluded.image`)
-          .run(code, clean(b.name, 120), money(b.price), money(b.compare_price), parseInt(b.stock, 10) || 0, String(b.active) === "0" ? 0 : 1, clean(b.image, 500));
+          stock=excluded.stock, active=excluded.active, image=excluded.image, category=excluded.category, description=excluded.description`)
+          .run(code, clean(b.name, 120), money(b.price), money(b.compare_price), parseInt(b.stock, 10) || 0, String(b.active) === "0" ? 0 : 1,
+            clean(b.image, 500), clean(b.category, 80), clean(b.description, 2000));
         return ok(res, "saved");
       }
       if (r === "product/delete" && req.method === "POST") {
@@ -338,6 +458,16 @@ async function handle(req, res) {
       }
       return fail(res, 404, "Not found");
     } catch (e) { return fail(res, 400, e.message); }
+  }
+
+  // Uploaded images
+  if (p.startsWith("/uploads/")) {
+    const f = path.basename(p);
+    const file = path.join(UPLOAD_DIR, f);
+    if (!/^[a-f0-9]{24}\.(png|jpg|webp|gif)$/.test(f) || !fs.existsSync(file)) return fail(res, 404, "Not found");
+    res.writeHead(200, { "Content-Type": { png: "image/png", jpg: "image/jpeg", webp: "image/webp", gif: "image/gif" }[f.split(".")[1]],
+      "Cache-Control": "public, max-age=31536000", "Access-Control-Allow-Origin": "*", "X-Content-Type-Options": "nosniff" });
+    return fs.createReadStream(file).pipe(res);
   }
 
   // Admin static files

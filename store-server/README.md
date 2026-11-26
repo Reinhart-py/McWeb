@@ -47,6 +47,8 @@ Open http://localhost:8800/admin/
   - Stripe keys
   - admin password
 
+Also: **Customers**, **Coupons** (percent or fixed, minimum order, use limit), **Reports** (sales by day, product and payment, CSV export), **stock tracking** with low-stock alerts, **shipping fee** with free-shipping limit, **categories**, a logo, and image upload or image URL for products. Turn each one on or off in **Settings → Features**. Uploaded images are saved in `data/uploads/`.
+
 ## Connect a website
 
 The shop API uses the same paths as the Frappe app in `../store_admin`, so a website works with either backend.
