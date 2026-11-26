@@ -28,6 +28,9 @@ const COLLECTIONS = {
 const TRENDING = ["MC1", "Oud", "Rose", "Trial Kit", "Gift Set", "Amber", "Limited Edition", "Travel Kit"];
 const COLLECTION_IMG = "assets/collection/parfum-collection.jpg";
 const WHATSAPP = "971505902665";
+// Store server address (store-server folder), e.g. "https://admin.mystore.com".
+// Empty = checkout sends the order on WhatsApp only.
+const STORE_API = "";
 
 const PRODUCTS = [
   { id: "mc1", name: "MC1", type: "parfum", family: "Woody · Fresh", price: 960, was: 1200,

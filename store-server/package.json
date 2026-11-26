@@ -1,0 +1,15 @@
+{
+  "name": "store-server",
+  "version": "1.0.0",
+  "description": "Small store backend + admin panel. Orders, products, card payments (Stripe), cash on delivery. No dependencies.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "license": "MIT"
+}

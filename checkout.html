@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Checkout | Millionaires Choice Parfum</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="https://millionaireschoiceparfum.com/wp-content/uploads/2022/03/cropped-favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@300;400;500;600;700&family=Philosopher:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .co { display: grid; grid-template-columns: 1.4fr 1fr; gap: 40px; padding: 40px 0 60px; align-items: start; }
+  .co h1 { font-family: Philosopher, serif; font-weight: 400; font-size: 28px; margin: 0 0 20px; }
+  .co h2 { font-size: 16px; font-weight: 500; margin: 26px 0 12px; }
+  .co label { display: block; font-size: 13px; color: #555; margin-bottom: 12px; }
+  .co input, .co textarea { display: block; width: 100%; margin-top: 6px; padding: 12px 14px; border: 1px solid #ddd; border-radius: 4px; font: inherit; font-size: 15px; background: #fff; }
+  .co input:focus, .co textarea:focus { outline: none; border-color: #111; }
+  .co .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .pay { display: grid; gap: 10px; }
+  .pay label { display: flex; align-items: center; gap: 12px; border: 1px solid #ddd; border-radius: 4px; padding: 14px 16px; cursor: pointer; font-size: 15px; color: #111; margin: 0; }
+  .pay label:has(input:checked) { border-color: #111; }
+  .pay input { width: 18px; height: 18px; margin: 0; accent-color: #111; }
+  .pay small { display: block; color: #6b6b6b; font-size: 12px; }
+  .sum { background: #fcf8ef; padding: 24px; border-radius: 4px; position: sticky; top: 20px; }
+  .sum .it { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #eadfca; }
+  .sum .it img { width: 60px; height: 60px; object-fit: cover; background: #fff; }
+  .sum .it div { flex: 1; font-size: 14px; }
+  .sum .tot { display: flex; justify-content: space-between; font-size: 17px; padding-top: 16px; }
+  .co .err { color: #b00020; font-size: 14px; min-height: 20px; margin: 12px 0 0; }
+  .co button[type=submit] { width: 100%; margin-top: 18px; border: 0; cursor: pointer; font-size: 15px; padding: 15px; }
+  .co button[disabled] { opacity: .6; cursor: wait; }
+  @media (max-width: 860px) { .co { grid-template-columns: 1fr; gap: 24px; } .sum { position: static; order: -1; } .co .two { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="co" id="co">
+    <form id="form" novalidate>
+      <h1>Checkout</h1>
+      <p id="cancelNote" class="err" hidden>Card payment was cancelled. You can try again or pick another option.</p>
+      <h2>Your details</h2>
+      <div class="two">
+        <label>Full name *<input name="customer_name" autocomplete="name" required maxlength="120"></label>
+        <label>Phone *<input name="phone" type="tel" autocomplete="tel" required maxlength="30" placeholder="+971"></label>
+      </div>
+      <label>Email<input name="email" type="email" autocomplete="email" maxlength="120"></label>
+      <h2>Delivery address</h2>
+      <label>Address *<input name="address" autocomplete="street-address" required maxlength="500" placeholder="Building, street, area"></label>
+      <label>City / Emirate *<input name="city" autocomplete="address-level2" required maxlength="80"></label>
+      <label>Notes<textarea name="notes" rows="3" maxlength="1000"></textarea></label>
+      <h2>Payment</h2>
+      <div class="pay" id="pay"></div>
+      <button class="btn-dark" type="submit" id="placeBtn">Place order</button>
+      <p class="err" id="err"></p>
+    </form>
+    <aside class="sum" id="sum"></aside>
+  </div>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+layout("");
+const items = cart.filter((i) => byId(i.id));
+const total = items.reduce((s, i) => s + byId(i.id).price * i.q, 0);
+if (!items.length) {
+  co.innerHTML = `<div class="empty" style="grid-column:1/-1;text-align:center;padding:60px 0">Your bag is empty.<br><br><a class="btn-dark" href="shop.html?c=all">Shop Now</a></div>`;
+} else {
+  sum.innerHTML = `<h2 style="margin-top:0">Your order</h2>` + items.map((i) => { const p = byId(i.id); return `
+    <div class="it"><img src="${p.imgs[0]}" alt=""><div>${p.name}<br><span style="color:#6b6b6b">Qty ${i.q}</span></div><b style="font-weight:500">${aed(p.price * i.q)}</b></div>`; }).join("") +
+    (items.some((i) => byId(i.id).type === "parfum") ? `<p style="font-size:13px;margin:12px 0 0">🎁 ${FREE_KIT_NOTE}</p>` : "") +
+    `<div class="tot"><span>Total</span><b style="font-weight:600">${aed(total)}</b></div>`;
+  if (new URLSearchParams(location.search).get("cancelled")) cancelNote.hidden = false;
+
+  const OPTS = {
+    "Card": "Pay by card<small>Visa, Mastercard and more. Secure payment page.</small>",
+    "Cash on Delivery": "Cash on delivery<small>Pay when your order arrives.</small>",
+    "WhatsApp": "Order on WhatsApp<small>We confirm delivery and payment with you on WhatsApp.</small>",
+  };
+  const drawPay = (list) => {
+    pay.innerHTML = list.map((k, n) => `<label><input type="radio" name="payment_method" value="${k}" ${n ? "" : "checked"}><span>${OPTS[k]}</span></label>`).join("");
+  };
+  drawPay(["WhatsApp"]);
+  const api = (fn) => STORE_API.replace(/\/$/, "") + "/api/method/store_admin.api." + fn;
+  if (STORE_API) {
+    fetch(api("get_store_config")).then((r) => r.json()).then((j) => {
+      const o = j.message.payment_options, list = [];
+      if (o.card) list.push("Card");
+      if (o.cash_on_delivery) list.push("Cash on Delivery");
+      drawPay([...list, "WhatsApp"]);
+    }).catch(() => {});
+  }
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    err.textContent = "";
+    const d = Object.fromEntries(new FormData(form));
+    for (const k of ["customer_name", "phone", "address", "city"]) {
+      if (!String(d[k] || "").trim()) { err.textContent = "Please fill all fields marked *."; form[k].focus(); return; }
+    }
+    if (d.payment_method === "WhatsApp") {
+      const msg = "Hi, I want to order:\n" + items.map((i) => `${byId(i.id).name} × ${i.q}`).join("\n") +
+        `\nTotal: ${aed(total)}\n\nName: ${d.customer_name}\nPhone: ${d.phone}\nAddress: ${d.address}, ${d.city}` + (d.notes ? `\nNotes: ${d.notes}` : "");
+      location.href = waLink(msg);
+      return;
+    }
+    placeBtn.disabled = true; placeBtn.textContent = "Please wait…";
+    try {
+      const r = await fetch(api("create_order"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...d, items: items.map((i) => ({ id: i.id, qty: i.q })) }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Order could not be placed.");
+      if (j.message.checkout_url) { location.href = j.message.checkout_url; return; }
+      store.set("mc_cart", []);
+      location.href = "order-success.html?order=" + encodeURIComponent(j.message.order);
+    } catch (ex) {
+      err.textContent = ex.message === "Failed to fetch" ? "Could not reach the store. Please try again or order on WhatsApp." : ex.message;
+      placeBtn.disabled = false; placeBtn.textContent = "Place order";
+    }
+  };
+}
+</script>
+</body>
+</html>

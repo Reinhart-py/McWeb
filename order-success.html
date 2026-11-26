@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thank you | Millionaires Choice Parfum</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="https://millionaireschoiceparfum.com/wp-content/uploads/2022/03/cropped-favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@300;400;500;600;700&family=Philosopher:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="wrap" style="text-align:center;padding:70px 0 90px;max-width:560px">
+  <h1 style="font-family:Philosopher,serif;font-weight:400;font-size:30px;margin:0 0 14px">Thank you for your order</h1>
+  <p id="msg" style="font-size:15px;color:#444">Your order has been received.</p>
+  <p style="font-size:15px;color:#444">Our team will contact you to confirm delivery.</p>
+  <p style="margin-top:28px"><a class="btn-dark" href="shop.html?c=all">Continue Shopping</a></p>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+layout("");
+store.set("mc_cart", []); cart = []; updateCounts();
+const order = new URLSearchParams(location.search).get("order");
+if (order) {
+  msg.textContent = `Order number: ${order}`;
+  if (STORE_API) {
+    fetch(STORE_API.replace(/\/$/, "") + "/api/method/store_admin.api.order_status?order=" + encodeURIComponent(order))
+      .then((r) => r.json()).then((j) => {
+        const o = j.message; if (!o) return;
+        msg.textContent = `Order number: ${o.name} · ${aed(o.total)} · ` + (o.payment_status === "Paid" ? "Payment received" : "Payment: " + o.payment_status);
+      }).catch(() => {});
+  }
+}
+</script>
+</body>
+</html>

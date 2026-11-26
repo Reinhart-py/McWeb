@@ -3,6 +3,14 @@
 All notable changes to the MC Parfum website. Newest first.
 Dates are 2026.
 
+## [1.6.0] — 26 Nov 2026
+### Added
+- Checkout page (`checkout.html`): customer details, delivery address, and payment choice of card, cash on delivery or WhatsApp.
+- Thank-you page (`order-success.html`) with the order number and payment status.
+- `STORE_API` in `assets/data.js`. It connects checkout to the store server (`store-server` folder). Empty = WhatsApp only.
+### Changed
+- Cart now has a "Checkout" button plus "Order on WhatsApp".
+
 ## [1.5.0] — 26 Nov 2026
 ### Added
 - Watch & Shop videos for MC1, MC6 and Limited Edition: AI models showing the bottles (made in Flow with Veo 3.1 Lite, 30 credits). No review claims.

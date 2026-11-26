@@ -177,8 +177,8 @@ function renderCart() {
     (hasParfum ? `<div class="free">🎁 ${FREE_KIT_NOTE} Added free.</div>` : `<div class="free">Add any MC parfum and get a free Travel Kit.</div>`);
   const msg = "Hi, I want to order:\n" + cart.map((i) => `${byId(i.id).name} × ${i.q}`).join("\n") + `\nTotal: ${aed(total)}`;
   foot.innerHTML = `<div style="display:flex;justify-content:space-between;font-size:15px"><span>Subtotal</span><b style="font-weight:500">${aed(total)}</b></div>
-    <a class="btn-wa" style="margin-top:12px" href="${waLink(msg)}" target="_blank" rel="noopener">${ICON.wa} Checkout on WhatsApp</a>
-    <p style="font-size:11px;color:#6b6b6b;margin-top:8px;text-align:center">Your order list is sent to our team on WhatsApp to confirm delivery and payment.</p>`;
+    <a class="btn-dark" style="margin-top:12px;display:block;text-align:center" href="checkout.html">Checkout</a>
+    <a class="btn-wa" style="margin-top:10px" href="${waLink(msg)}" target="_blank" rel="noopener">${ICON.wa} Order on WhatsApp</a>`;
 }
 function openCart() { renderCart(); document.body.classList.add("cart-open"); }
 function closeAll() { document.body.classList.remove("cart-open", "nav-open"); }

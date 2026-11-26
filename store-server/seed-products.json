@@ -1,0 +1,18 @@
+{
+  "settings": {
+    "store_name": "Millionaires Choice Parfum",
+    "currency": "AED",
+    "whatsapp_number": "971505902665"
+  },
+  "products": [
+    { "code": "mc1", "name": "MC1", "price": 960, "compare_price": 1200, "image": "https://millionaireschoiceparfum.com/wp-content/uploads/2022/01/product-1-1.jpg" },
+    { "code": "mc2", "name": "MC2", "price": 960, "compare_price": 1200, "image": "https://millionaireschoiceparfum.com/wp-content/uploads/2022/01/product-2-1.jpg" },
+    { "code": "mc3", "name": "MC3", "price": 960, "compare_price": 1200, "image": "https://millionaireschoiceparfum.com/wp-content/uploads/2022/01/product-3-1.jpg" },
+    { "code": "mc4", "name": "MC4", "price": 960, "compare_price": 1200, "image": "https://millionaireschoiceparfum.com/wp-content/uploads/2022/01/product-4-1.jpg" },
+    { "code": "mc5", "name": "MC5", "price": 960, "compare_price": 1200, "image": "https://millionaireschoiceparfum.com/wp-content/uploads/2022/01/product-5-1.jpg" },
+    { "code": "mc6", "name": "MC6", "price": 960, "compare_price": 1200, "image": "https://millionaireschoiceparfum.com/wp-content/uploads/2022/01/product-6-1.jpg" },
+    { "code": "mc-le", "name": "MC Limited Edition", "price": 1920, "compare_price": 2400, "image": "https://millionaireschoiceparfum.com/wp-content/uploads/2022/01/product-7-1.jpg" },
+    { "code": "travel-kit", "name": "Travel Kit", "price": 640, "compare_price": 800, "image": "https://millionaireschoiceparfum.com/wp-content/uploads/2022/02/product-travel-1.jpg" },
+    { "code": "trial-kit", "name": "Trial Kit", "price": 200, "compare_price": 250, "image": "https://millionaireschoiceparfum.com/wp-content/uploads/2023/01/trial-kit-Image-600x600-1.jpg" }
+  ]
+}
