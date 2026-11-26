@@ -3,6 +3,11 @@
 All notable changes to the MC Parfum website. Newest first.
 Dates are 2026.
 
+## [1.5.0] — 26 Nov 2026
+### Added
+- Watch & Shop videos for MC1, MC6 and Limited Edition: AI models showing the bottles (made in Flow with Veo 3.1 Lite, 30 credits). No review claims.
+- New Parfum Collection image (all MC bottles on marble) used on the home tile, story section and About page. It replaces MC's photo of a man holding a bottle.
+
 ## [1.4.0] — 26 Nov 2026
 ### Changed
 - Hero slider now moves **right to left** (next banner pushes in from the right). Back arrow and swipe go the other way. Speed 0.9 s, autoplay every 5 s.

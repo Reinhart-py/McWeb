@@ -26,7 +26,7 @@ const COLLECTIONS = {
   limited: { name: "Limited", title: "LIMITED EDITION", banner: "assets/hero/hero-signature.jpg", match: (p) => p.type === "limited" },
 };
 const TRENDING = ["MC1", "Oud", "Rose", "Trial Kit", "Gift Set", "Amber", "Limited Edition", "Travel Kit"];
-const COLLECTION_IMG = IMG + "2025/03/PARFUM-COLLECTION.webp";
+const COLLECTION_IMG = "assets/collection/parfum-collection.jpg";
 const WHATSAPP = "971505902665";
 
 const PRODUCTS = [

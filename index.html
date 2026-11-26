@@ -26,7 +26,7 @@
 <!-- CATEGORY TILES -->
 <section class="wrap rv" style="padding-bottom:20px">
   <div class="tiles">
-    <a class="tile" href="shop.html?c=parfum"><div class="im"><img src="https://millionaireschoiceparfum.com/wp-content/uploads/2025/03/PARFUM-COLLECTION.webp" alt="Parfum Collection"></div><p>Parfum Collection</p></a>
+    <a class="tile" href="shop.html?c=parfum"><div class="im"><img src="assets/collection/parfum-collection.jpg" alt="Parfum Collection"></div><p>Parfum Collection</p></a>
     <a class="tile" href="product.html?id=mc-le"><div class="im"><img src="https://millionaireschoiceparfum.com/wp-content/uploads/2022/01/product-7-2.jpg" alt="Limited Edition"></div><p>Limited Edition</p></a>
     <a class="tile" href="product.html?id=travel-kit"><div class="im"><img src="https://millionaireschoiceparfum.com/wp-content/uploads/2022/02/product-travel-2.jpg" alt="Travel Kit"></div><p>Travel Kit</p></a>
     <a class="tile" href="product.html?id=trial-kit"><div class="im"><img src="https://millionaireschoiceparfum.com/wp-content/uploads/2023/01/trial-kit-Image-600x600-1.jpg" alt="Trial Kit"></div><p>Trial Kit</p></a>
@@ -86,7 +86,7 @@
 <!-- STORY -->
 <section class="wrap rv">
   <div class="story">
-    <img src="https://millionaireschoiceparfum.com/wp-content/uploads/2025/03/PARFUM-COLLECTION.webp" alt="MC Parfum Collection">
+    <img src="assets/collection/parfum-collection.jpg" alt="MC Parfum Collection">
     <div class="t">
       <h2>Made for People Who Choose the Best</h2>
       <p>Millionaires Choice was created by George Jatania, who has over 40 years in perfume and beauty. Every scent is made with French Master Perfumers, for a millionaire's lifestyle.</p>
@@ -142,7 +142,7 @@ bs("all");
 document.querySelectorAll("#bsTabs button").forEach((b) => (b.onclick = () => { document.querySelectorAll("#bsTabs button").forEach((x) => x.classList.remove("on")); b.classList.add("on"); bs(b.dataset.f); }));
 
 // Watch & Shop: vertical frames now. To add a video later, put assets/reels/<id>.mp4 in REEL_VIDEOS.
-const REEL_VIDEOS = {}; // e.g. { mc1: "assets/reels/mc1.mp4" }
+const REEL_VIDEOS = { mc1: "assets/reels/mc1.mp4", "mc-le": "assets/reels/mc-le.mp4", mc6: "assets/reels/mc6.mp4" };
 document.getElementById("reelRow").innerHTML = ["mc1", "mc2", "mc-le", "mc6", "travel-kit", "mc4"].map((id) => { const p = byId(id); const poster = `assets/reels/${id}.jpg`; return `
   <div class="reel"><a class="v" href="product.html?id=${id}">${REEL_VIDEOS[id]
     ? `<video src="${REEL_VIDEOS[id]}" poster="${poster}" muted loop playsinline autoplay></video>`
